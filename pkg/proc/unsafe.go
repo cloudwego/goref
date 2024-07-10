@@ -16,7 +16,6 @@ package proc
 
 import (
 	"debug/dwarf"
-	"reflect"
 	"unsafe"
 	_ "unsafe"
 
@@ -106,18 +105,12 @@ func readVarEntry(entry *godwarf.Tree, image *Image) (name string, typ godwarf.T
 //go:linkname newVariable github.com/go-delve/delve/pkg/proc.newVariable
 func newVariable(name string, addr uint64, dwarfType godwarf.Type, bi *BinaryInfo, mem MemoryReadWriter) *Variable
 
-func uint64s2str(us []uint64) (s string) {
-	p := unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(&us)).Data)
-	hdr := (*reflect.StringHeader)(unsafe.Pointer(&s))
-	hdr.Data = uintptr(p)
-	hdr.Len = len(us) * 8
-	return
+func uint64s2str(us []uint64) string {
+	p := unsafe.Pointer(unsafe.SliceData(us))
+	return unsafe.String((*byte)(p), len(us)*8)
 }
 
-func str2uint64s(s string) (us []uint64) {
-	p := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&s)).Data)
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&us))
-	hdr.Data = uintptr(p)
-	hdr.Len, hdr.Cap = len(s)/8, len(s)/8
-	return
+func str2uint64s(s string) []uint64 {
+	p := unsafe.Pointer(unsafe.StringData(s))
+	return unsafe.Slice((*uint64)(p), len(s)/8)
 }

@@ -37,19 +37,6 @@ const (
 
 const fakeAddressUnresolv = 0xbeed000000000000
 
-type localsFlags uint8
-
-const (
-	// If localsTrustArgOrder is set function arguments that don't have an
-	// address will have one assigned by looking at their position in the argument
-	// list.
-	localsTrustArgOrder localsFlags = 1 << iota
-
-	// If localsNoDeclLineCheck the declaration line isn't checked at
-	// all to determine if the variable is in scope.
-	localsNoDeclLineCheck
-)
-
 type myEvalScope struct {
 	EvalScope
 

@@ -1,7 +1,7 @@
 # Goref
 
 [![WebSite](https://img.shields.io/website?up_message=cloudwego&url=https%3A%2F%2Fwww.cloudwego.io%2F)](https://www.cloudwego.io/)
-[![License](https://img.shields.io/github/license/cloudwego/goref)](https://github.com/cloudwego/goref/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/cloudwego/goref)](https://github.com/cloudwego/goref/blob/main/LICENSE-APACHE)
 
 Goref is a Go heap object reference analysis tool based on delve.
 It can display the space and object count distribution of Go memory references, which is helpful for efficiently locating memory leak issues or viewing persistent heap objects to optimize GC overhead.
@@ -15,6 +15,8 @@ $ git clone https://github.com/cloudwego/goref
 $ cd goref
 $ go install github.com/cloudwego/goref/cmd/grf
 ```
+
+> Supported go version to compile the command tool: go1.21 ~ go1.22.
 
 ## Usage
 
@@ -34,6 +36,8 @@ It also supports analyzing core files, e.g.
 $ grf core ${execfile} ${corefile}
 successfully output to `grf.out`
 ```
+
+> Supported go version for executable file: go1.17 ~ go1.22.
 
 ## Credit
 

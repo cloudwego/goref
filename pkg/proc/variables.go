@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/go-delve/delve/pkg/goversion"
@@ -593,26 +592,5 @@ func resolveTypedef(typ godwarf.Type) godwarf.Type {
 		default:
 			return typ
 		}
-	}
-}
-
-func filterVariables(vars []*Variable, pred func(v *Variable) bool) []*Variable {
-	r := make([]*Variable, 0, len(vars))
-	for i := range vars {
-		if pred(vars[i]) {
-			r = append(r, vars[i])
-		}
-	}
-	return r
-}
-
-func logPtrSize(ptrSize int) int {
-	switch ptrSize {
-	case 8:
-		return 3
-	case 4:
-		return 2
-	default:
-		panic("invalid ptrSize: " + strconv.Itoa(ptrSize))
 	}
 }

@@ -360,9 +360,7 @@ func (s *ObjRefScope) specialStructTypes(st *godwarf.StructType) *godwarf.Struct
 		// v *sync.readOnly
 		nst := *st
 		nst.Field = make([]*godwarf.StructField, len(st.Field))
-		for j := range st.Field {
-			nst.Field[j] = st.Field[j]
-		}
+		copy(nst.Field, st.Field)
 		nf := *nst.Field[2]
 		nf.Type = nst.Field[0].Type.(*godwarf.ArrayType).Type
 		nst.Field[2] = &nf
