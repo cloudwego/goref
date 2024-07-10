@@ -6,7 +6,7 @@ jobs:
   unit-benchmark-test:
     strategy:
       matrix:
-        go: [ "1.18", "1.19", "1.20", "1.21", "1.22" ]
+        go: [ "1.21", "1.22" ]
         os: [ X64 ]
     runs-on: ${{ matrix.os }}
     steps:

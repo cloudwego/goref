@@ -3,7 +3,6 @@ run:
   # include `vendor` `third_party` `testdata` `examples` `Godeps` `builtin`
   skip-dirs-use-default: true
   skip-dirs:
-    - kitex_gen
   skip-files:
     - ".*\\.mock\\.go$"
 # output configuration options
