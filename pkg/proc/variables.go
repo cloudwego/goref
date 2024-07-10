@@ -24,7 +24,7 @@ import (
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/go-delve/delve/pkg/goversion"
 	"github.com/go-delve/delve/pkg/logflags"
-	. "github.com/go-delve/delve/pkg/proc"
+	"github.com/go-delve/delve/pkg/proc"
 )
 
 const (
@@ -55,7 +55,7 @@ type ReferenceVariable struct {
 	Addr     Address
 	Name     string
 	RealType godwarf.Type
-	mem      MemoryReadWriter
+	mem      proc.MemoryReadWriter
 
 	// heap bits for this object
 	// hb.base equals to Addr, hb.end equals to min(Addr.Add(RealType.Size), heapBase.Add(elemSize))
@@ -67,11 +67,11 @@ type ReferenceVariable struct {
 	count int64
 }
 
-func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem MemoryReadWriter, hb *heapBits) *ReferenceVariable {
+func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *heapBits) *ReferenceVariable {
 	return &ReferenceVariable{Addr: addr, Name: name, RealType: typ, mem: mem, hb: hb}
 }
 
-func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf.Type, mem MemoryReadWriter, hb *heapBits, size, count int64) *ReferenceVariable {
+func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *heapBits, size, count int64) *ReferenceVariable {
 	rv := newReferenceVariable(addr, name, typ, mem, hb)
 	rv.size, rv.count = size, count
 	return rv
@@ -92,7 +92,7 @@ func (v *ReferenceVariable) isValid(addr Address) bool {
 }
 
 type mapIterator struct {
-	bi         *BinaryInfo
+	bi         *proc.BinaryInfo
 	numbuckets uint64
 	oldmask    uint64
 	buckets    *ReferenceVariable
@@ -148,9 +148,9 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable) (it *mapIterator, e
 			if err != nil {
 				return
 			}
-			buckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), DereferenceMemory(hmap.mem))
+			buckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem))
 			if buckets == nil {
-				buckets = newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), DereferenceMemory(hmap.mem), nil)
+				buckets = newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem), nil)
 			}
 			buckets.Name = "buckets"
 			it.buckets = buckets
@@ -162,9 +162,9 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable) (it *mapIterator, e
 			if err != nil {
 				return
 			}
-			oldbuckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), DereferenceMemory(hmap.mem))
+			oldbuckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem))
 			if oldbuckets == nil {
-				oldbuckets = newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), DereferenceMemory(hmap.mem), nil)
+				oldbuckets = newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem), nil)
 			}
 			oldbuckets.Name = "oldbuckets"
 			it.oldbuckets = oldbuckets
@@ -272,7 +272,7 @@ func (s *ObjRefScope) nextBucket(it *mapIterator) bool {
 				logflags.DebuggerLogger().Errorf("could not load overflow variable: %v", err)
 				return false
 			}
-			if it.overflow = s.findObject(Address(ptr), field.RealType.(*godwarf.PtrType).Type, DereferenceMemory(it.b.mem)); it.overflow != nil {
+			if it.overflow = s.findObject(Address(ptr), field.RealType.(*godwarf.PtrType).Type, proc.DereferenceMemory(it.b.mem)); it.overflow != nil {
 				it.count += it.overflow.count
 				it.size += it.overflow.size
 			}
@@ -384,7 +384,7 @@ func (it *mapIterator) mapEvacuated(b *ReferenceVariable) bool {
 	return true
 }
 
-func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *Variable, data *ReferenceVariable, isnil bool) {
+func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable, data *ReferenceVariable, isnil bool) {
 	// An interface variable is implemented either by a runtime.iface
 	// struct or a runtime.eface struct. The difference being that empty
 	// interfaces (i.e. "interface {}") are represented by runtime.eface
@@ -418,7 +418,7 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *Variable, data
 				continue
 			}
 			// +rtype *itab|*internal/abi.ITab
-			tab := newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), DereferenceMemory(v.mem), nil)
+			tab := newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(v.mem), nil)
 			isnil = tab.Addr == 0
 			if !isnil {
 				for _, tf := range tab.RealType.(*godwarf.StructType).Field {
@@ -461,7 +461,7 @@ type finalizePtrType struct {
 	godwarf.Type
 }
 
-func readIntRaw(mem MemoryReadWriter, addr uint64, size int64) (int64, error) {
+func readIntRaw(mem proc.MemoryReadWriter, addr uint64, size int64) (int64, error) {
 	var n int64
 
 	val := make([]byte, int(size))
@@ -484,7 +484,7 @@ func readIntRaw(mem MemoryReadWriter, addr uint64, size int64) (int64, error) {
 	return n, nil
 }
 
-func readUintRaw(mem MemoryReadWriter, addr uint64, size int64) (uint64, error) {
+func readUintRaw(mem proc.MemoryReadWriter, addr uint64, size int64) (uint64, error) {
 	var n uint64
 
 	val := make([]byte, int(size))
@@ -507,7 +507,7 @@ func readUintRaw(mem MemoryReadWriter, addr uint64, size int64) (uint64, error) 
 	return n, nil
 }
 
-func readUint64Array(mem MemoryReadWriter, addr uint64, res []uint64) (err error) {
+func readUint64Array(mem proc.MemoryReadWriter, addr uint64, res []uint64) (err error) {
 	val := make([]byte, len(res)*8)
 	_, err = mem.ReadMemory(val, addr)
 	if err != nil {
@@ -570,7 +570,7 @@ func fakeArrayType(n uint64, fieldType godwarf.Type) godwarf.Type {
 	}
 }
 
-func pointerTo(typ godwarf.Type, arch *Arch) godwarf.Type {
+func pointerTo(typ godwarf.Type, arch *proc.Arch) godwarf.Type {
 	return &godwarf.PtrType{
 		CommonType: godwarf.CommonType{
 			ByteSize:    int64(arch.PtrSize()),

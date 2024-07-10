@@ -21,10 +21,9 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/go-delve/delve/pkg/logflags"
-	. "github.com/go-delve/delve/pkg/proc"
-
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
+	"github.com/go-delve/delve/pkg/logflags"
+	"github.com/go-delve/delve/pkg/proc"
 )
 
 const maxRefDepth = 256
@@ -38,7 +37,7 @@ type ObjRefScope struct {
 	g *stack
 }
 
-func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem MemoryReadWriter) (v *ReferenceVariable) {
+func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem proc.MemoryReadWriter) (v *ReferenceVariable) {
 	sp, base := s.findSpanAndBase(addr)
 	if sp == nil {
 		// not in heap
@@ -79,7 +78,7 @@ func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem MemoryReadW
 	return
 }
 
-func (s *HeapScope) markObject(addr Address, mem MemoryReadWriter) (size, count int64) {
+func (s *HeapScope) markObject(addr Address, mem proc.MemoryReadWriter) (size, count int64) {
 	sp, base := s.findSpanAndBase(addr)
 	if sp == nil {
 		return // not found
@@ -166,7 +165,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		if err != nil {
 			return
 		}
-		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type), DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type), proc.DereferenceMemory(x.mem)); y != nil {
 			s.findRef(y, idx)
 			// flatten reference
 			x.size += y.size
@@ -177,7 +176,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		if err != nil {
 			return
 		}
-		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
 			x.size += y.size
 			x.count += y.count
 
@@ -208,7 +207,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		if err != nil {
 			return
 		}
-		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
 			it, err := s.toMapIterator(y)
 			if err != nil {
 				logflags.DebuggerLogger().Errorf("toMapIterator failed: %v", err)
@@ -232,7 +231,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		if err != nil {
 			return
 		}
-		if y := s.findObject(Address(strAddr), fakeArrayType(uint64(strLen), &godwarf.UintType{BasicType: godwarf.BasicType{CommonType: godwarf.CommonType{ByteSize: 1, Name: "byte", ReflectKind: reflect.Uint8}, BitSize: 8, BitOffset: 0}}), DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(strAddr), fakeArrayType(uint64(strLen), &godwarf.UintType{BasicType: godwarf.BasicType{CommonType: godwarf.CommonType{ByteSize: 1, Name: "byte", ReflectKind: reflect.Uint8}, BitSize: 8, BitOffset: 0}}), proc.DereferenceMemory(x.mem)); y != nil {
 			s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
@@ -251,7 +250,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 				cap_, _ = readUintRaw(x.mem, uint64(int64(x.Addr)+f.ByteOffset), f.Type.Size())
 			}
 		}
-		if y := s.findObject(Address(base), fakeArrayType(cap_, typ.ElemType), DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(base), fakeArrayType(cap_, typ.ElemType), proc.DereferenceMemory(x.mem)); y != nil {
 			s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
@@ -267,7 +266,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		}
 		var ityp godwarf.Type
 		if _type != nil {
-			rtyp, kind, err := RuntimeTypeToDIE(_type, uint64(data.Addr), s.mds)
+			rtyp, kind, err := proc.RuntimeTypeToDIE(_type, uint64(data.Addr), s.mds)
 			if err == nil {
 				if kind&kindDirectIface == 0 {
 					if _, isptr := resolveTypedef(rtyp).(*godwarf.PtrType); !isptr {
@@ -282,7 +281,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		if ityp == nil {
 			ityp = new(godwarf.VoidType)
 		}
-		if y := s.findObject(Address(ptrval), ityp, DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(ptrval), ityp, proc.DereferenceMemory(x.mem)); y != nil {
 			s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
@@ -324,7 +323,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 			return
 		}
 		var cst godwarf.Type
-		funcAddr, err := readUintRaw(DereferenceMemory(x.mem), closureAddr, int64(s.bi.Arch.PtrSize()))
+		funcAddr, err := readUintRaw(proc.DereferenceMemory(x.mem), closureAddr, int64(s.bi.Arch.PtrSize()))
 		if err == nil && funcAddr != 0 {
 			if fn := s.bi.PCToFunc(funcAddr); fn != nil {
 				// cst := extra(fn, s.bi).closureStructType
@@ -336,7 +335,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		if cst == nil {
 			cst = new(godwarf.VoidType)
 		}
-		if closure := s.findObject(Address(closureAddr), cst, DereferenceMemory(x.mem)); closure != nil {
+		if closure := s.findObject(Address(closureAddr), cst, proc.DereferenceMemory(x.mem)); closure != nil {
 			s.findRef(closure, idx)
 			x.size += closure.size
 			x.count += closure.count
@@ -349,7 +348,6 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		}
 	default:
 	}
-	return
 }
 
 var atomicPointerRegex = regexp.MustCompile(`^sync/atomic\.Pointer\[.*\]$`)
@@ -379,12 +377,12 @@ func isPrimitiveType(typ godwarf.Type) bool {
 	return false
 }
 
-var loadSingleValue = LoadConfig{}
+var loadSingleValue = proc.LoadConfig{}
 
 // ObjectReference scanning goroutine stack and global vars to search all heap objects they reference,
 // and outputs the reference relationship to the filename with pprof format.
-func ObjectReference(t *Target, filename string) error {
-	scope, err := ThreadScope(t, t.CurrentThread())
+func ObjectReference(t *proc.Target, filename string) error {
+	scope, err := proc.ThreadScope(t, t.CurrentThread())
 	if err != nil {
 		return err
 	}
@@ -405,7 +403,7 @@ func ObjectReference(t *Target, filename string) error {
 		pb:        newProfileBuilder(f),
 	}
 
-	mds, err := LoadModuleData(t.BinInfo(), t.Memory())
+	mds, err := proc.LoadModuleData(t.BinInfo(), t.Memory())
 	if err != nil {
 		return err
 	}
@@ -422,7 +420,7 @@ func ObjectReference(t *Target, filename string) error {
 
 	// Local variables
 	threadID := t.CurrentThread().ThreadID()
-	grs, _, _ := GoroutinesInfo(t, 0, 0)
+	grs, _, _ := proc.GoroutinesInfo(t, 0, 0)
 	for _, gr := range grs {
 		s.g = &stack{}
 		lo, hi := getStack(gr)
@@ -430,10 +428,10 @@ func ObjectReference(t *Target, filename string) error {
 		if gr.Thread != nil {
 			threadID = gr.Thread.ThreadID()
 		}
-		sf, _ := GoroutineStacktrace(t, gr, 1024, 0)
+		sf, _ := proc.GoroutineStacktrace(t, gr, 1024, 0)
 		if len(sf) > 0 {
 			for i := range sf {
-				ms := myEvalScope{EvalScope: *FrameToScope(t, t.Memory(), gr, threadID, sf[i:]...)}
+				ms := myEvalScope{EvalScope: *proc.FrameToScope(t, t.Memory(), gr, threadID, sf[i:]...)}
 				locals, err := ms.Locals(mds)
 				if err != nil {
 					logflags.DebuggerLogger().Errorf("local variables err: %v", err)

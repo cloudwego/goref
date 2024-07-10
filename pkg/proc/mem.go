@@ -16,7 +16,7 @@
 package proc
 
 import (
-	. "github.com/go-delve/delve/pkg/proc"
+	"github.com/go-delve/delve/pkg/proc"
 )
 
 const cacheEnabled = true
@@ -25,7 +25,7 @@ type memCache struct {
 	loaded    bool
 	cacheAddr uint64
 	cache     []byte
-	mem       MemoryReadWriter
+	mem       proc.MemoryReadWriter
 }
 
 func (m *memCache) contains(addr uint64, size int) bool {
@@ -57,7 +57,7 @@ func (m *memCache) WriteMemory(addr uint64, data []byte) (written int, err error
 	return m.mem.WriteMemory(addr, data)
 }
 
-func cacheMemory(mem MemoryReadWriter, addr uint64, size int) MemoryReadWriter {
+func cacheMemory(mem proc.MemoryReadWriter, addr uint64, size int) proc.MemoryReadWriter {
 	if !cacheEnabled {
 		return mem
 	}

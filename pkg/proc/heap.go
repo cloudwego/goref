@@ -21,7 +21,7 @@ import (
 	"math/bits"
 
 	"github.com/go-delve/delve/pkg/logflags"
-	. "github.com/go-delve/delve/pkg/proc"
+	"github.com/go-delve/delve/pkg/proc"
 )
 
 type spanInfo struct {
@@ -118,11 +118,11 @@ type HeapScope struct {
 
 	finalizers []finalizer
 
-	mds []ModuleData
+	mds []proc.ModuleData
 
-	mem   MemoryReadWriter
-	bi    *BinaryInfo
-	scope *EvalScope
+	mem   proc.MemoryReadWriter
+	bi    *proc.BinaryInfo
+	scope *proc.EvalScope
 
 	finalMarks []finalMarkParam
 }
@@ -308,7 +308,7 @@ func (s *HeapScope) copyGCMask(sp *spanInfo, base Address) Address {
 	}
 }
 
-func (s *HeapScope) readType(sp *spanInfo, typeAddr Address, addr, end Address) {
+func (s *HeapScope) readType(sp *spanInfo, typeAddr, addr, end Address) {
 	var typeSize, ptrBytes int64
 	var gcDataAddr Address
 	mem := cacheMemory(s.mem, uint64(typeAddr), int(gcDataOffset+8))
@@ -379,7 +379,7 @@ func (s *HeapScope) readOneBitBitmap(bitmap *region, min Address) {
 }
 
 // TODO: use bitmapMask to speed up memory lookup.
-const bitmapMask uint64 = 0xf0f0f0f0f0f0f0f0
+// const bitmapMask uint64 = 0xf0f0f0f0f0f0f0f0
 
 // Read a multi-bit bitmap (Go 1.11-1.20), recording the heap pointers.
 func (s *HeapScope) readMultiBitBitmap(bitmap *region, min Address) {
@@ -480,7 +480,6 @@ func (hb *heapBits) resetGCMask(addr Address) {
 	// TODO: check gc mask
 	offset := addr.Sub(hb.sp.base)
 	hb.sp.ptrMask[offset/8/64] &= ^(1 << (offset / 8 % 64))
-	return
 }
 
 // nextPtr returns next ptr address starts from 'addr', returns 0 if not found.

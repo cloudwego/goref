@@ -11,10 +11,10 @@ package proc
 
 import (
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
-	. "github.com/go-delve/delve/pkg/proc"
+	"github.com/go-delve/delve/pkg/proc"
 )
 
-func toRegion(v *Variable, bi *BinaryInfo) *region {
+func toRegion(v *proc.Variable, bi *proc.BinaryInfo) *region {
 	return &region{
 		mem: getVariableMem(v),
 		bi:  bi,
@@ -28,15 +28,10 @@ func toRegion(v *Variable, bi *BinaryInfo) *region {
 // Note that it is the type of the thing in the region,
 // not the type of the reference to the region.
 type region struct {
-	mem MemoryReadWriter
-	bi  *BinaryInfo
+	mem proc.MemoryReadWriter
+	bi  *proc.BinaryInfo
 	a   Address
 	typ godwarf.Type
-}
-
-func (r *region) clone() *region {
-	nr := *r
-	return &nr
 }
 
 // Address returns the address that a region of pointer type points to.

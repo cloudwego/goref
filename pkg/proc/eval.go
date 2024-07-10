@@ -27,7 +27,7 @@ import (
 	"github.com/go-delve/delve/pkg/dwarf/reader"
 	"github.com/go-delve/delve/pkg/goversion"
 	"github.com/go-delve/delve/pkg/logflags"
-	. "github.com/go-delve/delve/pkg/proc"
+	"github.com/go-delve/delve/pkg/proc"
 )
 
 const (
@@ -38,15 +38,15 @@ const (
 const fakeAddressUnresolv = 0xbeed000000000000
 
 type myEvalScope struct {
-	EvalScope
+	proc.EvalScope
 
 	dictAddr uint64 // dictionary address for instantiated generic functions
 
-	enclosingRangeScopes []*EvalScope
-	rangeFrames          []Stackframe
+	// enclosingRangeScopes []*proc.EvalScope
+	// rangeFrames          []proc.Stackframe
 }
 
-func (scope *myEvalScope) Locals(mds []ModuleData) ([]*ReferenceVariable, error) {
+func (scope *myEvalScope) Locals(mds []proc.ModuleData) ([]*ReferenceVariable, error) {
 	// var scopes [][]*Variable
 	vars0, err := scope.simpleLocals(mds)
 	if err != nil {
@@ -102,7 +102,7 @@ func (scope *myEvalScope) Locals(mds []ModuleData) ([]*ReferenceVariable, error)
 	*/
 }
 
-func (scope *myEvalScope) simpleLocals(mds []ModuleData) ([]*ReferenceVariable, error) {
+func (scope *myEvalScope) simpleLocals(mds []proc.ModuleData) ([]*ReferenceVariable, error) {
 	if scope.Fn == nil {
 		return nil, errors.New("unable to find function context")
 	}
@@ -181,7 +181,7 @@ func (scope *myEvalScope) simpleLocals(mds []ModuleData) ([]*ReferenceVariable, 
 
 // Extracts the name and type of a variable from a dwarf entry
 // then executes the instructions given in the  DW_AT_location attribute to grab the variable's address
-func extractVarInfoFromEntry(bi *BinaryInfo, image *Image, regs op.DwarfRegisters, mem MemoryReadWriter, entry *godwarf.Tree, dictAddr uint64, mds []ModuleData) (*ReferenceVariable, error) {
+func extractVarInfoFromEntry(bi *proc.BinaryInfo, image *proc.Image, regs op.DwarfRegisters, mem proc.MemoryReadWriter, entry *godwarf.Tree, dictAddr uint64, mds []proc.ModuleData) (*ReferenceVariable, error) {
 	if entry.Tag != dwarf.TagFormalParameter && entry.Tag != dwarf.TagVariable {
 		return nil, fmt.Errorf("invalid entry tag, only supports FormalParameter and Variable, got %s", entry.Tag.String())
 	}
@@ -197,10 +197,10 @@ func extractVarInfoFromEntry(bi *BinaryInfo, image *Image, regs op.DwarfRegister
 		logflags.DebuggerLogger().Errorf("could not resolve parametric type of %s: %v", n, err)
 	}
 
-	addr, pieces, _, err := bi.Location(entry, dwarf.AttrLocation, regs.PC(), regs, mem)
+	addr, pieces, _, _ := bi.Location(entry, dwarf.AttrLocation, regs.PC(), regs, mem)
 	uaddr := uint64(addr)
 	if pieces != nil {
-		cmem, _ := CreateCompositeMemory(mem, bi.Arch, regs, pieces, t.Common().ByteSize)
+		cmem, _ := proc.CreateCompositeMemory(mem, bi.Arch, regs, pieces, t.Common().ByteSize)
 		if cmem != nil {
 			uaddr = fakeAddressUnresolv
 			mem = cmem
@@ -213,7 +213,7 @@ func extractVarInfoFromEntry(bi *BinaryInfo, image *Image, regs op.DwarfRegister
 
 // resolveParametricType returns the real type of t if t is a parametric
 // type, by reading the correct dictionary entry.
-func resolveParametricType(bi *BinaryInfo, mem MemoryReadWriter, t godwarf.Type, dictAddr uint64, mds []ModuleData) (godwarf.Type, error) {
+func resolveParametricType(bi *proc.BinaryInfo, mem proc.MemoryReadWriter, t godwarf.Type, dictAddr uint64, mds []proc.ModuleData) (godwarf.Type, error) {
 	ptyp, _ := t.(*godwarf.ParametricType)
 	if ptyp == nil {
 		return t, nil
@@ -231,7 +231,7 @@ func resolveParametricType(bi *BinaryInfo, mem MemoryReadWriter, t godwarf.Type,
 	}
 	_type := newVariable("", rtypeAddr, runtimeType, bi, mem)
 
-	typ, _, err := RuntimeTypeToDIE(_type, 0, mds)
+	typ, _, err := proc.RuntimeTypeToDIE(_type, 0, mds)
 	if err != nil {
 		return ptyp.TypedefType.Type, err
 	}
@@ -239,7 +239,7 @@ func resolveParametricType(bi *BinaryInfo, mem MemoryReadWriter, t godwarf.Type,
 	return typ, nil
 }
 
-func runtimeTypeTypename(bi *BinaryInfo) string {
+func runtimeTypeTypename(bi *proc.BinaryInfo) string {
 	if goversion.ProducerAfterOrEqual(bi.Producer(), 1, 21) {
 		return "internal/abi.Type"
 	}
@@ -253,11 +253,11 @@ type variablesByDepthAndDeclLine struct {
 
 func (v *variablesByDepthAndDeclLine) Len() int { return len(v.vars) }
 
-func (v *variablesByDepthAndDeclLine) Less(i int, j int) bool {
+func (v *variablesByDepthAndDeclLine) Less(i, j int) bool {
 	return v.depths[i] < v.depths[j]
 }
 
-func (v *variablesByDepthAndDeclLine) Swap(i int, j int) {
+func (v *variablesByDepthAndDeclLine) Swap(i, j int) {
 	v.depths[i], v.depths[j] = v.depths[j], v.depths[i]
 	v.vars[i], v.vars[j] = v.vars[j], v.vars[i]
 }

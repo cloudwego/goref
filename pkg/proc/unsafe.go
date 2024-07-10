@@ -20,7 +20,7 @@ import (
 	_ "unsafe"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
-	. "github.com/go-delve/delve/pkg/proc"
+	"github.com/go-delve/delve/pkg/proc"
 	"github.com/modern-go/reflect2"
 )
 
@@ -38,32 +38,32 @@ var (
 )
 
 func init() {
-	vt := reflect2.TypeOf(Variable{}).(reflect2.StructType)
+	vt := reflect2.TypeOf(proc.Variable{}).(reflect2.StructType)
 	memField = vt.FieldByName("mem")
 
-	gt := reflect2.TypeOf(G{}).(reflect2.StructType)
+	gt := reflect2.TypeOf(proc.G{}).(reflect2.StructType)
 	stackField = gt.FieldByName("stack")
 
-	st := reflect2.TypeOf(stackField.Get(&G{})).(reflect2.PtrType).Elem().(reflect2.StructType)
+	st := reflect2.TypeOf(stackField.Get(&proc.G{})).(reflect2.PtrType).Elem().(reflect2.StructType)
 	stackLoField = st.FieldByName("lo")
 	stackHiField = st.FieldByName("hi")
 
-	ft := reflect2.TypeOf(Function{}).(reflect2.StructType)
+	ft := reflect2.TypeOf(proc.Function{}).(reflect2.StructType)
 	offsetField = ft.FieldByName("offset")
 }
 
-func getVariableMem(v *Variable) MemoryReadWriter {
-	return *memField.Get(v).(*MemoryReadWriter)
+func getVariableMem(v *proc.Variable) proc.MemoryReadWriter {
+	return *memField.Get(v).(*proc.MemoryReadWriter)
 }
 
-func getStack(g *G) (lo, hi uint64) {
+func getStack(g *proc.G) (lo, hi uint64) {
 	stack := stackField.Get(g)
 	lo = *stackLoField.Get(stack).(*uint64)
 	hi = *stackHiField.Get(stack).(*uint64)
 	return
 }
 
-func getFunctionOffset(f *Function) (offset dwarf.Offset) {
+func getFunctionOffset(f *proc.Function) (offset dwarf.Offset) {
 	return *offsetField.Get(f).(*dwarf.Offset)
 }
 
@@ -88,22 +88,22 @@ func extra(f *Function, bi *BinaryInfo) (e *functionExtra)
 */
 
 //go:linkname image github.com/go-delve/delve/pkg/proc.(*EvalScope).image
-func image(scope *EvalScope) *Image
+func image(scope *proc.EvalScope) *proc.Image
 
 //go:linkname getDwarfTree github.com/go-delve/delve/pkg/proc.(*Image).getDwarfTree
-func getDwarfTree(image *Image, off dwarf.Offset) (*godwarf.Tree, error)
+func getDwarfTree(image *proc.Image, off dwarf.Offset) (*godwarf.Tree, error)
 
 //go:linkname findType github.com/go-delve/delve/pkg/proc.(*BinaryInfo).findType
-func findType(bi *BinaryInfo, name string) (godwarf.Type, error)
+func findType(bi *proc.BinaryInfo, name string) (godwarf.Type, error)
 
 //go:linkname rangeParentName github.com/go-delve/delve/pkg/proc.(*Function).rangeParentName
-func rangeParentName(fn *Function) string
+func rangeParentName(fn *proc.Function) string
 
 //go:linkname readVarEntry github.com/go-delve/delve/pkg/proc.readVarEntry
-func readVarEntry(entry *godwarf.Tree, image *Image) (name string, typ godwarf.Type, err error)
+func readVarEntry(entry *godwarf.Tree, image *proc.Image) (name string, typ godwarf.Type, err error)
 
 //go:linkname newVariable github.com/go-delve/delve/pkg/proc.newVariable
-func newVariable(name string, addr uint64, dwarfType godwarf.Type, bi *BinaryInfo, mem MemoryReadWriter) *Variable
+func newVariable(name string, addr uint64, dwarfType godwarf.Type, bi *proc.BinaryInfo, mem proc.MemoryReadWriter) *proc.Variable
 
 func uint64s2str(us []uint64) string {
 	p := unsafe.Pointer(unsafe.SliceData(us))

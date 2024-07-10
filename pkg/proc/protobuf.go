@@ -29,14 +29,14 @@ func (b *protobuf) varint(x uint64) {
 	b.data = append(b.data, byte(x))
 }
 
-func (b *protobuf) length(tag int, len int) {
+func (b *protobuf) length(tag, len int) {
 	b.varint(uint64(tag)<<3 | 2)
 	b.varint(uint64(len))
 }
 
 func (b *protobuf) uint64(tag int, x uint64) {
 	// append varint to b.data
-	b.varint(uint64(tag)<<3 | 0)
+	b.varint(uint64(tag) << 3)
 	b.varint(x)
 }
 
@@ -110,12 +110,12 @@ func (b *protobuf) strings(tag int, x []string) {
 	}
 }
 
-func (b *protobuf) stringOpt(tag int, x string) {
-	if x == "" {
-		return
-	}
-	b.string(tag, x)
-}
+//func (b *protobuf) stringOpt(tag int, x string) {
+//	if x == "" {
+//		return
+//	}
+//	b.string(tag, x)
+//}
 
 func (b *protobuf) bool(tag int, x bool) {
 	if x {
@@ -125,12 +125,12 @@ func (b *protobuf) bool(tag int, x bool) {
 	}
 }
 
-func (b *protobuf) boolOpt(tag int, x bool) {
-	if !x {
-		return
-	}
-	b.bool(tag, x)
-}
+//func (b *protobuf) boolOpt(tag int, x bool) {
+//	if !x {
+//		return
+//	}
+//	b.bool(tag, x)
+//}
 
 type msgOffset int
 
@@ -177,9 +177,9 @@ const (
 	tagSample_Label    = 3 // repeated Label
 
 	// message Label
-	tagLabel_Key = 1 // int64 (string table index)
-	tagLabel_Str = 2 // int64 (string table index)
-	tagLabel_Num = 3 // int64
+	// tagLabel_Key = 1 // int64 (string table index)
+	// tagLabel_Str = 2 // int64 (string table index)
+	// tagLabel_Num = 3 // int64
 
 	// message Mapping
 	tagMapping_ID              = 1  // uint64
