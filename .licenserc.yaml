@@ -7,4 +7,12 @@ header:
     - '**/*.go'
     - '**/*.s'
 
+  paths-ignore:
+    - pkg/proc/eval.go
+    - pkg/proc/mem.go
+    - pkg/proc/protobuf.go
+    - pkg/proc/region.go
+    - pkg/proc/variables.go
+    - testdata
+
   comment: on-failure
