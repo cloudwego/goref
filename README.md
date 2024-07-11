@@ -30,15 +30,11 @@ $ go tool pprof -http=:5079 ./grf.out
 
 The opened HTML page displays the reference distribution of the heap memory. You can choose to view the "inuse space" or "inuse objects".
 
-
-<img width="1920" alt="image" src="https://github.com/cloudwego/goref/assets/24311963/a9fe0294-fe58-456a-a9d5-a8cb25049bff">
-<br /> <br />
+<img width="1920" alt="image" src="https://github.com/cloudwego/goref/assets/24311963/a9fe0294-fe58-456a-a9d5-a8cb25049bff"> <br />
 
 View flame graph of inuse objects:
 
-
 <img width="1916" alt="image" src="https://github.com/cloudwego/goref/assets/24311963/24e80f51-3af3-4405-8f71-57e51c42c7ed">
-
 
 It also supports analyzing core files, e.g.
 
