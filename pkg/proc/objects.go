@@ -216,11 +216,11 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 			for s.next(it) {
 				// find key ref
 				key := it.key()
-				key.Name = "$mapkey"
+				key.Name = "$mapkey. (" + key.RealType.String() + ")"
 				s.findRef(key, idx)
 				// find val ref
 				val := it.value()
-				val.Name = "$mapval"
+				val.Name = "$mapval. (" + val.RealType.String() + ")"
 				s.findRef(val, idx)
 			}
 			x.size += it.size
@@ -296,7 +296,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 			if isPrimitiveType(field.Type) {
 				continue
 			}
-			y := newReferenceVariable(fieldAddr, field.Name, resolveTypedef(field.Type), x.mem, x.hb)
+			y := newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), x.mem, x.hb)
 			s.findRef(y, idx)
 		}
 	case *godwarf.ArrayType:
@@ -314,7 +314,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 			if i < 10 {
 				name = "[" + strconv.Itoa(int(i)) + "]"
 			}
-			y := newReferenceVariable(elemAddr, name, eType, x.mem, x.hb)
+			y := newReferenceVariable(elemAddr, name+". ("+eType.String()+")", eType, x.mem, x.hb)
 			s.findRef(y, idx)
 		}
 	case *godwarf.FuncType:

@@ -149,13 +149,12 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable) (it *mapIterator, e
 				return
 			}
 			buckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem))
-			if buckets == nil {
-				buckets = newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem), nil)
+			if buckets != nil {
+				buckets.Name = "buckets"
+				it.buckets = buckets
+				it.size += buckets.size
+				it.count += buckets.count
 			}
-			buckets.Name = "buckets"
-			it.buckets = buckets
-			it.size += buckets.size
-			it.count += buckets.count
 		case "oldbuckets": // +rtype -fieldof hmap unsafe.Pointer
 			var ptr uint64
 			ptr, err = hmap.readPointer(hmap.Addr.Add(f.ByteOffset))
@@ -163,23 +162,26 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable) (it *mapIterator, e
 				return
 			}
 			oldbuckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem))
-			if oldbuckets == nil {
-				oldbuckets = newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem), nil)
+			if oldbuckets != nil {
+				oldbuckets.Name = "oldbuckets"
+				it.oldbuckets = oldbuckets
+				it.size += oldbuckets.size
+				it.count += oldbuckets.count
 			}
-			oldbuckets.Name = "oldbuckets"
-			it.oldbuckets = oldbuckets
-			it.size += oldbuckets.size
-			it.count += oldbuckets.count
 		}
 	}
 
-	if _, ok = it.buckets.RealType.(*godwarf.StructType); !ok {
-		err = errMapBucketsNotStruct
-		return
+	if it.buckets != nil {
+		if _, ok = it.buckets.RealType.(*godwarf.StructType); !ok {
+			err = errMapBucketsNotStruct
+			return
+		}
 	}
-	if _, ok = it.oldbuckets.RealType.(*godwarf.StructType); !ok {
-		err = errMapBucketsNotStruct
-		return
+	if it.oldbuckets != nil {
+		if _, ok = it.oldbuckets.RealType.(*godwarf.StructType); !ok {
+			err = errMapBucketsNotStruct
+			return
+		}
 	}
 
 	it.hashTophashEmptyOne = hashTophashEmptyZero
@@ -208,10 +210,13 @@ func (s *ObjRefScope) nextBucket(it *mapIterator) bool {
 		}
 
 		for it.bidx < it.numbuckets {
+			if it.buckets == nil {
+				break
+			}
 			it.b = it.buckets.clone()
 			it.b.Addr = it.b.Addr.Add(it.buckets.RealType.Size() * int64(it.bidx))
 
-			if it.oldbuckets.Addr <= 0 {
+			if it.oldbuckets == nil {
 				break
 			}
 
