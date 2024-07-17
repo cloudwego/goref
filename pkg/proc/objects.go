@@ -125,16 +125,20 @@ type finalMarkParam struct {
 func (s *ObjRefScope) finalMark(idx *pprofIndex, hb *heapBits) {
 	var ptr Address
 	var size, count int64
+	var mem proc.MemoryReadWriter
 	for {
 		ptr = hb.nextPtr(true)
 		if ptr == 0 {
 			break
 		}
-		ptr, err := readUintRaw(s.mem, uint64(ptr), int64(s.bi.Arch.PtrSize()))
+		if mem == nil {
+			mem = cacheMemory(s.mem, uint64(ptr), int(hb.end.Sub(ptr)))
+		}
+		ptr, err := readUintRaw(mem, uint64(ptr), int64(s.bi.Arch.PtrSize()))
 		if err != nil {
 			continue
 		}
-		size_, count_ := s.markObject(Address(ptr), s.mem)
+		size_, count_ := s.markObject(Address(ptr), mem)
 		size += size_
 		count += count_
 	}
