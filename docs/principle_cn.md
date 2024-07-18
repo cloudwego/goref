@@ -4,7 +4,7 @@
 
 众所周知， Go 是带 GC 的语言，一个对象无法释放，几乎 100% 是由于 GC 通过引用分析将其标记为存活。而同样作为 GC 语言，Java 的分析工具就更加完善了，比如 JProfiler 可以有效地给出对象引用关系。因此，我们也想在 Go 上实现一个高效的引用分析工具，能够准确直接地告诉我们内存引用分布和引用关系，帮我们从艰难的静态分析中解放出来。
 
-好消息是，我们已基本完成了这个工具的开发工作，使用方式见 README 文档。以下将对这个工具的实现做详细讲解。
+好消息是，我们已基本完成了这个工具的开发工作，使用方式和效果展示见 README 文档。以下将对这个工具的实现做详细讲解。
 
 # 思路
 
@@ -93,7 +93,7 @@ func echo() *byte {
 }
 ```
 
-从 GC 的角度出发，虽然 unsafe 转换了类型为`*byte`，但并没有影响其 gcmask 的标记，所以在扫描下游对象时，仍然能扫描到完整的`Object`对象，识别到`bytes`这个下游对象，从而将其标记为存活。
+从 GC 的角度出发，虽然 unsafe 转换了类型为`*byte`，但并没有影响其 gcmask 的标记，所以在扫描下游对象时，仍然能扫描到完整的 `Object` 对象，识别到 `bytes` 这个下游对象，从而将其标记为存活。
 
 但 DWARF 类型扫描可做不到，在扫描到 `byte` 类型时，会被认为是无指针的对象，直接跳过进一步的扫描了。所以，唯一的办法是，优先以 DWARF 类型扫描，对于无法扫到的对象，再用 gc 的方式来标记。
 
@@ -126,13 +126,3 @@ func echo() *byte {
 - 输出子对象的字段名和类型名，形如：
 
     `Conn. (net.Conn)`
-
-# 效果展示
-
-以下是一个真实业务用工具采样后的对象引用火焰图：
-![](https://bytedance.larkoffice.com/space/api/box/stream/download/asynccode/?code=ODM4YmExZWYzMmFiMTNiMzQ2ZGE5YTc0ZjE4ZGRmYjdfYUlFa0pQRjRpU2hjZnp6UElLb09SYWFpbXFUbjViYXhfVG9rZW46QVRMaWJ4UXo0b2owaHl4dTUwUGNhOXA1bmVnXzE3MjEzMDM1NDk6MTcyMTMwNzE0OV9WNA)
-
-图中展示了每个 root 变量的名称，以及其引用的字段名和类型名，从中可以看到，内存 cache 占了较大空间。
-
-选择 inuse\_objects 标签，还可以查看对象数分布火焰图：
-![](https://bytedance.larkoffice.com/space/api/box/stream/download/asynccode/?code=NmU2MWQ2MTllZTgyNDU3MjE4OTI1ZmYyZTk4ZWI4ZTRfck51b0FtNlN1Y08xU0VLalM2cmY5T0VWVjk3c2hVM0dfVG9rZW46RkJ3eGIwQ3Nab3lBbUZ4eVkzMGN2ZUFIbjljXzE3MjEzMDM1NDk6MTcyMTMwNzE0OV9WNA)

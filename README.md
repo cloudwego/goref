@@ -9,13 +9,9 @@ It can display the space and object count distribution of Go memory references, 
 
 ## Installation
 
-Build command:
-
 ```
 $ go install github.com/cloudwego/goref/cmd/grf@latest
 ```
-
-> Supported go version to compile the command tool: go1.21 ~ go1.22.
 
 ## Usage
 
@@ -45,12 +41,15 @@ $ grf core ${execfile} ${corefile}
 successfully output to `grf.out`
 ```
 
-> Supported go version for executable file: go1.17 ~ go1.22.
+## Go Version Constraints
+
+- Executable file: go1.17 ~ go1.22.
+- Compile goref tool: >= go1.21.
 
 
 ## Docs
 
-[Principle](docs/principle.md)
+[Principle](docs/principle.md) | [实现原理](docs/principle_cn.md)
 
 ## Credit
 
