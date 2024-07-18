@@ -4,16 +4,15 @@
 [![License](https://img.shields.io/github/license/cloudwego/goref)](https://github.com/cloudwego/goref/blob/main/LICENSE-APACHE)
 
 Goref is a Go heap object reference analysis tool based on delve.
+
 It can display the space and object count distribution of Go memory references, which is helpful for efficiently locating memory leak issues or viewing persistent heap objects to optimize GC overhead.
 
 ## Installation
 
-Clone the git repository and build:
+Build command:
 
 ```
-$ git clone https://github.com/cloudwego/goref
-$ cd goref
-$ go install github.com/cloudwego/goref/cmd/grf
+$ go install github.com/cloudwego/goref/cmd/grf@latest
 ```
 
 > Supported go version to compile the command tool: go1.21 ~ go1.22.
@@ -30,11 +29,14 @@ $ go tool pprof -http=:5079 ./grf.out
 
 The opened HTML page displays the reference distribution of the heap memory. You can choose to view the "inuse space" or "inuse objects".
 
-<img width="1920" alt="image" src="https://github.com/cloudwego/goref/assets/24311963/a9fe0294-fe58-456a-a9d5-a8cb25049bff"> <br />
+<img width="1919" alt="image" src="https://github.com/user-attachments/assets/95afe64b-0aab-4de6-93af-b5e671f43b0c">
+
+> DWARF parsing of closure type was not supported before Go 1.23, so sub objects of `wpool.task` cannot be displayed.
 
 View flame graph of inuse objects:
 
-<img width="1916" alt="image" src="https://github.com/cloudwego/goref/assets/24311963/24e80f51-3af3-4405-8f71-57e51c42c7ed">
+<img width="1917" alt="image" src="https://github.com/user-attachments/assets/86e76318-7eea-4180-96e3-7a184e65252b">
+
 
 It also supports analyzing core files, e.g.
 
@@ -46,15 +48,9 @@ successfully output to `grf.out`
 > Supported go version for executable file: go1.17 ~ go1.22.
 
 
-## Principle
-The main steps of Goref reference analysis are as follows:
+## Docs
 
-1. Based on Delve, implement the functionality to attach processes and parse core files to achieve memory reading of the process to be analyzed.
-2. Parse the goroutine stack, data/bss segments, and heap span address space ranges, as well as gcmask, from the memory of the process to be analyzed, and build an index in the tool's runtime memory.
-3. Read DWARF Entries from the process executable file, parse the type descriptions of global variables and goroutine local variables, and calculate the actual memory addresses using Location expressions.
-4. Starting from the root objects obtained from step 3, prioritize object retrieval based on their DWARF types, determining the reference paths of all objects whose types can be determined.
-5. Search for gcmask and perform a second search for any objects that were not accessed during the DWARF retrieval in step 4, recording the found objects on the reference paths of known types.
-6. Record the number of objects and memory space occupied by all reference chains in the pprof file buffer, and then flush it to a file. In this way, we'll obtain a complete flame graph of the reference chains.
+[Principle](docs/principle.md)
 
 ## Credit
 
