@@ -50,7 +50,7 @@ When the GC scans variable `b`, it doesn't simply scan the memory of the field `
 
 When the GC scans variable `a`, it encounters the GC bit sequence `1001`. How do we interpret this? We can interpret it as indicating that the addresses `base+0` and `base+24` are pointers and need to be further scanned for downstream objects. Here, both `A string` and `C *[]byte` contain pointers to downstream objects.
 
-![image](https://github.com/user-attachments/assets/1fb72f61-d593-4f45-b9b4-61eadd24c063)
+<p align="center"><img src="https://github.com/user-attachments/assets/1fb72f61-d593-4f45-b9b4-61eadd24c063" width="60%"></p>
 
 Based on the brief analysis above, we can observe that to find all live objects, the fundamental principle is to start from the GC Roots and scan the GC bits of each object. If an address is marked as `1`, continue scanning downstream. For each downstream address, it's necessary to determine its `mspan` to obtain the complete object's base address, size, and GC bit information.
 
@@ -98,7 +98,7 @@ Through the process attach and core file analysis features provided by Delve, we
 
 The above steps provide a general overview of the process, but there are still some details to address, such as handling GC finalizer objects and special handling of the allocation header feature in Go version 1.22. We won't delve into these details here.
 
-## DWARF 类型扫描
+## DWARF Type Scan
 
 All preparations are complete except one thing. Whether it is the GC metadata for heap scanning or the type information for GC root variables, they have been successfully parsed. Now, the most crucial step of object reference analysis begins its execution.
 
@@ -122,7 +122,7 @@ However, DWARF type scanning cannot achieve the same result. When scanning a `by
 
 To achieve this, whenever we access a pointer of an object using DWARF types, we mark its corresponding gcmask from 1 to 0. After scanning an object, if there are still pointers with non-zero marks within the object's address space range, we record them as tasks for final marking. After completing the DWARF type scanning for all objects, we retrieve these tasks and perform a second scan following the GC approach.
 
-![image](https://github.com/user-attachments/assets/cb286079-a7bd-4ef4-9c07-21eb8eb7fd80)
+<p align="center"><img src="https://github.com/user-attachments/assets/cb286079-a7bd-4ef4-9c07-21eb8eb7fd80" width="60%"></p>
 
 For example, in the case of accessing the `Object` object mentioned above, its gcmask is `1010`. After reading field A, the gcmask becomes `1000`. If field C is not accessed due to type coercion, it will be accounted for during the final scan using the GC marking.
 
