@@ -3,6 +3,7 @@
 As a Go developer, we may encounter situations of memory leaks from time to time. Most people would attempt to take a heap profile as their first step to identify the cause of the problem. However, in many cases, the heap profile flame graph is not very helpful for troubleshooting because it only records where objects are created. In complex business scenarios where objects are passed through multiple layers of dependencies or memory pools, it becomes almost impossible to locate the root cause based solely on the stack information of object creation.
 
 Take the following heap profile as an example. The stack of the FastRead function is a deserialization function in the Kitex framework. If a business goroutine leaks a request object, it actually cannot reflect the corresponding leaked code position but only shows that the FastRead function stack occupies memory.
+
 ![image](https://github.com/user-attachments/assets/462ee4da-02d0-465c-90ee-c1c59fc86dc9)
 
 As we all know, Go is a language with a garbage collector (GC). If an object cannot be released, it is almost 100% due to the fact that the GC marks it as alive through reference analysis. As a GC language, Java's analysis tools are more advanced. For example, JProfiler can effectively display object reference relationships. Therefore, we also want to develop an efficient reference analysis tool for Go that can accurately and directly show us memory reference distribution and reference relationships, liberating us from difficult static analysis.
