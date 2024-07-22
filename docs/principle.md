@@ -1,18 +1,32 @@
 # Is Pprof Really Sufficient?
 
-As Go developers, we may often encounter issues of memory leaks, and most people's initial approach is to generate a heap profile to identify the cause of the problem. However, in many cases, the heap profile flame graph is not very helpful in troubleshooting because it only records where objects were created. In complex business scenarios where objects are passed through multiple layers of dependencies or reused in memory pools, it becomes nearly impossible to locate the root cause based solely on the stack information of object creation.
+As a Go developer, we may encounter situations of memory leaks from time to time. Most people would attempt to take a heap profile as their first step to identify the cause of the problem. However, in many cases, the heap profile flame graph is not very helpful for troubleshooting because it only records where objects are created. In complex business scenarios where objects are passed through multiple layers of dependencies or memory pools, it becomes almost impossible to locate the root cause based solely on the stack information of object creation.
 
-It is well known that Go is a garbage-collected language, and when an object cannot be freed, it is almost always because the GC has marked it as live through reference analysis. In contrast, Java, as another GC-enabled language, has more sophisticated analysis tools. For example, JProfiler can effectively provide object reference relationships. Therefore, we also wanted to develop an efficient reference analysis tool for Go that can accurately and directly show us memory reference distribution and relationships, freeing us from the difficulties of static analysis.
+Take the following heap profile as an example. The stack of the FastRead function is a deserialization function in the Kitex framework. If a business goroutine leaks a request object, it actually cannot reflect the corresponding leaked code position but only shows that the FastRead function stack occupies memory.
+![]()
 
-The good news is that we have made significant progress in developing this tool, and its usage and results are described in the README document. The following will provide a detailed explanation of the implementation of this tool.
+As we all know, Go is a language with a garbage collector (GC). If an object cannot be released, it is almost 100% due to the fact that the GC marks it as alive through reference analysis. As a GC language, Java's analysis tools are more advanced. For example, JProfiler can effectively display object reference relationships. Therefore, we also want to develop an efficient reference analysis tool for Go that can accurately and directly show us memory reference distribution and reference relationships, liberating us from difficult static analysis.
+
+The good news is that we have basically completed the development of this tool. Please refer to the README document for instructions on how to use it and see its effectiveness. The following will discuss the design concept and detailed implementation of this tool.
 
 # Ideas
 
 ## GC Mark Process
 
-Before diving into the specific implementation, let's review how GC marks objects as live.
+Before diving into the specific implementation, let's review how GC marks objects as alive.
 
-Go adopts a tiered allocation scheme similar to tcmalloc, where each heap object is assigned to an `mspan` during allocation, and its size is fixed. During GC, a heap address is used to locate the corresponding `mspan` through multiple-level indexing, enabling access to the base and size of the original object. The GC bitmap marks whether each 8-byte aligned address in the memory space of an object is a pointer type, allowing for further marking of downstream objects.
+Go adopts a tiered allocation scheme similar to tcmalloc. Each heap object is assigned to an `mspan` when allocated, and its size is fixed. During GC, a heap address calls `runtime.spanOf` to look up the corresponding `mspan` from a multi-level index, obtaining the base address and size of the original object.
+
+```Go
+// simplified code
+func spanOf(p uintptr) *mspan {
+    ri := arenaIndex(p)
+    ha := mheap_.arenas[ri.l1()][ri.l2()]
+    return ha.spans[(p/pageSize)%pagesPerArena]
+}
+```
+
+By using the `runtime.heapBitsForAddr` function, we can obtain the GC bitmap for a range of object addresses. The GC bitmap marks whether each 8-byte aligned address within the memory of an object is a pointer type, thus determining whether to further mark downstream objects.
 
 For example, consider the following Go code snippet:
 
@@ -31,59 +45,67 @@ func echo() *Object {
 }
 ```
 
-When GC scans the variable `b`, it doesn't just scan the memory of the field `B int64` directly. Instead, it looks up the base address and elem size through the `mspan` index before performing the scan. As a result, the memory of fields `A` and `C`, as well as their downstream objects, will be marked as live.
+When the GC scans variable `b`, it doesn't simply scan the memory of the field `B int64`. Instead, it looks up the base and elem size through the `mspan` index and then performs the scan. Therefore, the memory of fields A and C, as well as their downstream objects, will be marked as live.
 
-When GC scans the variable `a`, it encounters a corresponding GC bit of `1010`. How should we interpret this? We can consider it as the addresses `base+8` and `base+24` being pointers, indicating that further scanning of downstream objects is required. Both `A string` and `C *[]byte` contain pointers that point to downstream objects.
+When the GC scans variable `a`, it encounters the GC bit sequence `1001`. How do we interpret this? We can interpret it as indicating that the addresses `base+0` and `base+24` are pointers and need to be further scanned for downstream objects. Here, both `A string` and `C *[]byte` contain pointers to downstream objects.
 
-Based on this brief analysis, we can conclude that to find all live objects, the basic principle is to start from the GC roots and scan the GC bits of objects one by one. If an address is marked as `1`, we continue scanning downstream. For each downstream address, we need to determine its mspan to obtain the complete object's base address, size, and GC bits.
+![]()
+
+Based on the brief analysis above, we can observe that to find all live objects, the fundamental principle is to start from the GC Roots and scan the GC bits of each object. If an address is marked as `1`, continue scanning downstream. For each downstream address, it's necessary to determine its `mspan` to obtain the complete object's base address, size, and GC bit information.
 
 ## DWARF Type Information
 
-However, knowing the object's reference relationships alone is almost useless for troubleshooting purposes. It doesn't provide any helpful variable names that developers can use to pinpoint issues. Therefore, there is a crucial step involved in obtaining the variable names and type information of these objects.
+However, knowing the object's reference relationships alone is almost of no help for troubleshooting because it doesn't provide any useful variable names that developers can use to locate the problem. Therefore, there is a crucial step to retrieve the variable names and type information of these objects.
 
-Go itself is a statically typed language, and objects typically do not directly contain their type information. For example, when we create an object using the `obj = new(Object)` function, the actual memory only stores the values of the fields `A/B/C`, occupying only 32 bytes of memory. In this case, how can we obtain the type information?
+Go itself is a statically-typed language, and objects generally do not directly contain their type information. For example, when we create an object using `obj = new(Object)`, the actual memory only stores the values of the three fields `A/B/C`, occupying only 32 bytes of memory. In that case, how can we obtain the type information?
 
-# Implementation of Goref
+# Goref Implementation
 
 ## Delve Tool Introduction
 
-Those who have experience with Go development are likely familiar with Delve. Even if you think you haven't used it directly, if you've used the code debugging functionality in the Goland IDE, it is actually based on Delve underneath. Now that we've mentioned it, I believe you can recall the debugging window with variable names, values, and types displayed. Yes, those are exactly the type information we need!
+Those who have experience with Go development should have used Delve. If you feel like you haven't used it, don't doubt yourself. The code debugging functionality you've used in the Goland IDE is actually based on Delve. Now that we mention it, I believe everyone has recalled the visual display in the debugging window during debugging. Yes, the variable names, variable values, and variable types shown in the debugging window are exactly the type information we need!
 
-So, how does Delve obtain this type information for variables? When we attach to a process, Delve reads the executable file from the symbolic link `/proc/<pid>/exe`, which points to the actual ELF file path. During Go compilation, various debug information is generated and stored in sections prefixed with `.debug_*` in the executable file, following the DWARF standard format. The type information for global and local variables, which is needed for reference analysis, can be parsed from these DWARF information.
+```
+$ ./dlv attach 270
+(dlv) ...
+(dlv) locals
+tccCli = ("*code.byted.org/gopkg/tccclient.ClientV2")(0xc000782240)
+ticker = (*time.Ticker)(0xc001086be0)
+```
 
-For global variables: Delve iterates over all DWARF entries and parses the ones with the `Variable` tag, which contain attributes such as Location, Type, and Name.
+So how does Delve obtain this variable information? When attaching to a process, Delve reads the executable file from `/proc/<pid>/exe`, which is a symbolic link to the actual ELF file path. During Go compilation, debug information is generated and stored in sections with the `.debug_*` prefix in the executable file, following the DWARF standard format. The type information for global variables and local variables, which is required for reference analysis, can be parsed from these DWARF information.
 
-1. Among them, the Type attribute records the type information of the variable. By recursively traversing it according to the DWARF format, we can further determine the type of each sub-object of the variable.
+For global variables: Delve iterates through all DWARF entries and extracts the DWARF entries with the `Variable` tag, representing global variables. These entries contain attributes such as Location, Type, and Name.
 
-2. The Location attribute is relatively complex. It stores an executable expression or a simple variable address. Its purpose is to determine the memory address of a variable or return the value of a register. During the resolution of global variables, Delve uses the Location attribute to obtain the memory address of the variable.
+1. The Type attribute records the type information of the variable. By recursively traversing the DWARF format, the type of each sub-object of the variable can be determined.
 
+2. The Location attribute is a relatively complex attribute that records an executable expression or a simple variable address. Its purpose is to determine the memory address of a variable or return the value of a register. During the resolution of global variables, Delve uses the Location attribute to obtain the memory address of the variable.
 
-The principle of resolving local variables within a Goroutine is similar to that of global variables, but it is slightly more complex. For example, it requires determining the DWARF offset based on the PC (Program Counter), and the location expressions can be more intricate, involving register access. However, delving into these details is beyond the scope of this discussion.
+The principle of resolving local variables in Goroutines is similar to that of global variables, but it is slightly more complex. For example, it requires determining the DWARF offset based on the PC (Program Counter), and the location expressions can be more complex, involving register access. However, we won't delve into these details here.
 
-## Building Metadata for GC Analysis
+## Construction of Metadata for GC Analysis
 
-Through the process attach and core file analysis features provided by Delve, we can also obtain memory access permissions. Following the approach of marking objects in the GC, we construct the necessary metadata of the target process in the runtime memory of our tool. This includes:
+Through the process attach and core file analysis features provided by Delve, we can also obtain memory access permissions. Following the approach of marking objects during GC, we construct the necessary metadata for the process being analyzed within the runtime memory of the tool. This includes:
 
-1. The address space ranges of each Goroutine stack in the target process, including the `stackmap` that stores the gcmask for each Goroutine stack. The `stackmap` is used to determine whether it may point to a live heap object.
+1. The address space range of each Goroutine stack in the process being analyzed, including the `stackmap` that stores the gcmask for each Goroutine stack. This `stackmap` is used to mark whether a stack may contain references to live heap objects.
 
-2. The address space ranges of each data/bss segment in the target process, including the gcmask for each segment. The gcmask is also used to determine whether it may point to a live heap object.
+2. The address space range of each data/bss segment in the process being analyzed, including the gcmask for each segment. This gcmask is also used to mark whether a segment may contain references to live heap objects.
 
-3. The above two steps are necessary to obtain the GC Roots information.
+3. The above two steps are necessary for obtaining the GC Roots information.
 
-4. The final step is to read the mspan index of the target process and reconstruct this index in the memory of our tool, including the base, elem size, gcmask, and other information for each mspan.
+4. The final step is to read the mspan index of the process being analyzed, as well as the base, elem size, gcmask, and other information for each mspan, and reconstruct this index within the tool's memory.
 
+The above steps provide a general overview of the process, but there are still some details to address, such as handling GC finalizer objects and special handling of the allocation header feature in Go version 1.22. We won't delve into these details here.
 
-The above steps provide a general overview of the process, but there are additional details to consider, such as handling GC finalizer objects and special handling for the allocation header feature in Go 1.22. However, these details are beyond the scope of this discussion.
-
-## DWARF Type Scan
+## DWARF 类型扫描
 
 All preparations are complete except one thing. Whether it is the GC metadata for heap scanning or the type information for GC root variables, they have been successfully parsed. Now, the most crucial step of object reference analysis begins its execution.
 
-We invoke the `findRef` function and access the memory of the object based on different DWARF types. Assuming it is a pointer that may point to a downstream object, we read the value of the pointer and search for the corresponding downstream object in the GC metadata. At this point, as mentioned earlier, we have obtained information such as the object's base address, element size, and GC mask.
+For each GC root variable, we invoke the `findRef` function, which accesses the memory of the object based on different DWARF types. Assuming it is a pointer that may point to downstream objects, we read the value of the pointer and locate the downstream object in the GC metadata. At this point, as mentioned earlier, we obtain information such as the object's base address, element size, and gcmask.
 
-If the object is accessed, record a mark bit to avoid repeated access to the object. Construct a new variable using the DWARF sub-object type, and recursively invoke `findRef` again until all known types of objects are confirmed.
+If the object is accessed, we mark a bit to avoid redundant access to the object. We construct a new variable based on the DWARF sub-object type and recursively call `findRef` until all objects of known types are confirmed.
 
-However, this reference scanning approach is completely contradictory to the way GC operates. The main reason is that Go contains a significant amount of unsafe type conversions. It is possible that an object, after creation, may have pointer fields, such as:
+However, this reference scanning approach contradicts the traditional GC approach. The main reason is that there are numerous unsafe type conversions in Go. For example, an object may initially be created as an object with pointer fields, such as:
 
 ```Go
 func echo() *byte {
@@ -93,37 +115,43 @@ func echo() *byte {
 }
 ```
 
-From the perspective of GC, although the type was converted to `*byte` using unsafe, it did not affect the marking of its gcmask. Therefore, when scanning downstream objects, the complete `Object` object can still be scanned, and the downstream object `bytes` can be identified and marked as live.
+From the perspective of GC, although there is an unsafe type conversion to `*byte`, it does not affect the marking of its gcmask. Therefore, when scanning downstream objects, the complete `Object` object can still be scanned, and the downstream object bytes can be recognized and marked as live.
 
-However, this is not achievable through DWARF type scanning. When encountering the `byte` type, it is considered an object without pointers and further scanning is skipped. Therefore, the only solution is to prioritize DWARF type scanning, and for objects that cannot be scanned using this method, resort to GC-style marking.
+However, DWARF type scanning cannot achieve the same result. When scanning a `byte` type, it is considered an object without pointers, and further scanning is skipped. Therefore, the only solution is to prioritize DWARF type scanning, and for objects that cannot be scanned this way, use the GC approach to mark them.
 
-To achieve this, each time we access a pointer of an object using the DWARF type, we mark its corresponding gcmask from 1 to 0. After scanning an object, if there are still pointers with non-zero marks within the object's address space, they are recorded as tasks for final marking. Once all objects have been scanned using the DWARF type, these final marking tasks are retrieved and subjected to a second scan using GC's approach.
+To achieve this, whenever we access a pointer of an object using DWARF types, we mark its corresponding gcmask from 1 to 0. After scanning an object, if there are still pointers with non-zero marks within the object's address space range, we record them as tasks for final marking. After completing the DWARF type scanning for all objects, we retrieve these tasks and perform a second scan following the GC approach.
 
-For example, in the case of the `Object` object mentioned above, its gcmask is `1010`. After reading field A, the gcmask becomes `1000`. If field C is not accessed due to type coercion or memory out-of-bounds, it will be accounted for during the final GC marking scan.
+![]()
 
+For example, in the case of accessing the `Object` object mentioned above, its gcmask is `1010`. After reading field A, the gcmask becomes `1000`. If field C is not accessed due to type coercion, it will be accounted for during the final scan using the GC marking.
+
+In addition to type coercion, referencing memory out of bounds is also a common issue. For instance, in the previous example code `var b *int64 = &echo().B`, both fields A and C belong to memory that cannot be scanned by DWARF types and will be accounted for during the final scan.
 
 ## Final Scan
 
-The aforementioned field C, fields that cannot be accessed due to exceeding the address range defined by DWARF, or variables of types like `unsafe.Pointer` that cannot have their types determined, will all be marked during the final scan. Since the specific types of these objects cannot be determined, there is no need to output them separately. It is sufficient to record their size and count in the known reference chain.
+Fields that have been type-coerced, cannot be accessed due to exceeding the address range defined by DWARF, or variables of undetermined type such as `unsafe.Pointer`, will be marked during the final scan. Since the specific types of these objects cannot be determined, there is no need to output them separately. Instead, their size and count are recorded in the known reference chain.
 
-In the native Go implementation, several commonly used libraries make use of `unsafe.Pointer`, which causes issues with identifying sub-objects. Special handling is required for such types.
+In the native Go implementation, many commonly used libraries utilize `unsafe.Pointer`, causing issues with identifying sub-objects. Special handling is required for such types.
 
 ## Output File Format
 
 Once all objects have been scanned, the reference chains along with the number of objects and their memory space will be output to a file. The file will be aligned with the pprof binary file format and encoded using protobuf.
 
-1. **Output** **root object format:**
+1. **Output root object format:**
 
 - Stack variable format: package name + function name + stack variable name
 
-   `github.com/cloudwego/kitex/client.invokeHandleEndpoint.func1.sendMsg`
+  `github.com/cloudwego/kitex/client.invokeHandleEndpoint.func1.sendMsg`
 
 - Global variable format: package name + global variable name
 
-   `github.com/cloudwego/kitex/``pkg/loadbalance/lbcache.balancerFactories`
+  `github.com/cloudwego/kitex/pkg/loadbalance/lbcache.balancerFactories`
 
-2. **Output** **sub-object format:**
+2. **Output sub-object format:**
 
-- Output the field name and type name of the child object, in the form of:
+- Output the field name and type name of the child object, in the form of: `net.Conn`；
 
-   `Conn. (net.Conn)`
+- If it is a map key or value field, it will be output in the form of `$mapkey. (type_name)` or `$mapval. (type_name)`;
+
+- If it is an element of an array, it will be output in the format like `[0]. (type_name)`, and for indices greater than or equal to 10, it will be output in the format `[10+]. (type_name)`.
+
