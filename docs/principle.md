@@ -3,7 +3,7 @@
 As a Go developer, we may encounter situations of memory leaks from time to time. Most people would attempt to take a heap profile as their first step to identify the cause of the problem. However, in many cases, the heap profile flame graph is not very helpful for troubleshooting because it only records where objects are created. In complex business scenarios where objects are passed through multiple layers of dependencies or memory pools, it becomes almost impossible to locate the root cause based solely on the stack information of object creation.
 
 Take the following heap profile as an example. The stack of the FastRead function is a deserialization function in the Kitex framework. If a business goroutine leaks a request object, it actually cannot reflect the corresponding leaked code position but only shows that the FastRead function stack occupies memory.
-![]()
+![image](https://github.com/user-attachments/assets/ccff6b04-b7f1-46b6-b80b-eb00935d4223)
 
 As we all know, Go is a language with a garbage collector (GC). If an object cannot be released, it is almost 100% due to the fact that the GC marks it as alive through reference analysis. As a GC language, Java's analysis tools are more advanced. For example, JProfiler can effectively display object reference relationships. Therefore, we also want to develop an efficient reference analysis tool for Go that can accurately and directly show us memory reference distribution and reference relationships, liberating us from difficult static analysis.
 
@@ -49,7 +49,7 @@ When the GC scans variable `b`, it doesn't simply scan the memory of the field `
 
 When the GC scans variable `a`, it encounters the GC bit sequence `1001`. How do we interpret this? We can interpret it as indicating that the addresses `base+0` and `base+24` are pointers and need to be further scanned for downstream objects. Here, both `A string` and `C *[]byte` contain pointers to downstream objects.
 
-![]()
+![image](https://github.com/user-attachments/assets/1fb72f61-d593-4f45-b9b4-61eadd24c063)
 
 Based on the brief analysis above, we can observe that to find all live objects, the fundamental principle is to start from the GC Roots and scan the GC bits of each object. If an address is marked as `1`, continue scanning downstream. For each downstream address, it's necessary to determine its `mspan` to obtain the complete object's base address, size, and GC bit information.
 
@@ -121,7 +121,7 @@ However, DWARF type scanning cannot achieve the same result. When scanning a `by
 
 To achieve this, whenever we access a pointer of an object using DWARF types, we mark its corresponding gcmask from 1 to 0. After scanning an object, if there are still pointers with non-zero marks within the object's address space range, we record them as tasks for final marking. After completing the DWARF type scanning for all objects, we retrieve these tasks and perform a second scan following the GC approach.
 
-![]()
+![image](https://github.com/user-attachments/assets/cb286079-a7bd-4ef4-9c07-21eb8eb7fd80)
 
 For example, in the case of accessing the `Object` object mentioned above, its gcmask is `1010`. After reading field A, the gcmask becomes `1000`. If field C is not accessed due to type coercion, it will be accounted for during the final scan using the GC marking.
 
