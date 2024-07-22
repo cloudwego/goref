@@ -50,7 +50,7 @@ GC 在扫描变量`b`时，不是只简单地扫描`B int64`这个字段的内�
 
 GC 扫描变量`a`变量时，发现对应的 GC bit 是`1001`，怎么理解呢？可以认为是`base+0`和`base+24`的地址是指针，要继续扫描下游对象，这里`A string`和`C *[]byte`都包含了一个指向下游对象的指针。
 
-![image](https://github.com/user-attachments/assets/1fb72f61-d593-4f45-b9b4-61eadd24c063)
+<p align="center"><img src="https://github.com/user-attachments/assets/1fb72f61-d593-4f45-b9b4-61eadd24c063" width="60%"></p>
 
 基于以上的简要分析，我们可以发现，要找到所有存活的对象，简单的原理就是从 GC Root 出发，挨个扫描对象的 GC bit，如果某个地址被标记为`1`，就继续向下扫描，每个下游地址都要确定它的 mspan，从而获取完整的对象基地址、大小和 GC bit。
 
@@ -124,7 +124,7 @@ func echo() *byte {
 
 要实现这一点，做法是每当我们用 DWARF 类型访问一个对象的指针时，都将其对应的 gcmask 从 1 标记为 0，这样在扫描完一个对象后，如果对象的地址空间范围内仍然有非 0 标记的指针，就把它记录到最终标记的任务里。等到所有对象通过 DWARF 类型扫描完成后，再把这些最终标记任务取出来，以 GC 的做法二次扫描。
 
-![image](https://github.com/user-attachments/assets/cb286079-a7bd-4ef4-9c07-21eb8eb7fd80)
+<p align="center"><img src="https://github.com/user-attachments/assets/cb286079-a7bd-4ef4-9c07-21eb8eb7fd80" width="60%"></p>
 
 例如，上述 `Object` 对象访问时，其 gcmask 是`1010`，读取字段 A 后，gcmask 变成 `1000`，如果字段 C 因为类型强转没有访问到，则在最终扫描的 GC 标记时就会被统计到。
 
