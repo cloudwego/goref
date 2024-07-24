@@ -368,6 +368,9 @@ func (s *ObjRefScope) specialStructTypes(st *godwarf.StructType) *godwarf.Struct
 }
 
 func isPrimitiveType(typ godwarf.Type) bool {
+	if typ.Size() == 0 {
+		return true
+	}
 	typ = resolveTypedef(typ)
 	switch typ.(type) {
 	case *godwarf.BoolType, *godwarf.FloatType, *godwarf.UintType,
