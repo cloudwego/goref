@@ -78,7 +78,7 @@ func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem proc.Memory
 	return
 }
 
-func (s *HeapScope) markObject(addr Address, mem proc.MemoryReadWriter) (size, count int64) {
+func (s *HeapScope) markObject(addr Address) (size, count int64) {
 	sp, base := s.findSpanAndBase(addr)
 	if sp == nil {
 		return // not found
@@ -90,20 +90,20 @@ func (s *HeapScope) markObject(addr Address, mem proc.MemoryReadWriter) (size, c
 	realBase := s.copyGCMask(sp, base)
 	size, count = sp.elemSize, 1
 	hb := newHeapBits(realBase, base.Add(sp.elemSize), sp)
-	if hb.nextPtr(false) != 0 {
-		// has pointer, cache mem
-		mem = cacheMemory(mem, uint64(base), int(sp.elemSize))
-	}
+	var mem proc.MemoryReadWriter
 	for {
 		ptr := hb.nextPtr(true)
 		if ptr == 0 {
 			break
 		}
+		if mem == nil {
+			mem = cacheMemory(s.mem, uint64(ptr), int(hb.end.Sub(ptr)))
+		}
 		nptr, err := readUintRaw(mem, uint64(ptr), int64(s.bi.Arch.PtrSize()))
 		if err != nil {
 			continue
 		}
-		size_, count_ := s.markObject(Address(nptr), mem)
+		size_, count_ := s.markObject(Address(nptr))
 		size += size_
 		count += count_
 	}
@@ -125,16 +125,20 @@ type finalMarkParam struct {
 func (s *ObjRefScope) finalMark(idx *pprofIndex, hb *heapBits) {
 	var ptr Address
 	var size, count int64
+	var mem proc.MemoryReadWriter
 	for {
 		ptr = hb.nextPtr(true)
 		if ptr == 0 {
 			break
 		}
-		ptr, err := readUintRaw(s.mem, uint64(ptr), int64(s.bi.Arch.PtrSize()))
+		if mem == nil {
+			mem = cacheMemory(s.mem, uint64(ptr), int(hb.end.Sub(ptr)))
+		}
+		ptr, err := readUintRaw(mem, uint64(ptr), int64(s.bi.Arch.PtrSize()))
 		if err != nil {
 			continue
 		}
-		size_, count_ := s.markObject(Address(ptr), s.mem)
+		size_, count_ := s.markObject(Address(ptr))
 		size += size_
 		count += count_
 	}
@@ -215,13 +219,22 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 			}
 			for s.next(it) {
 				// find key ref
-				key := it.key()
-				key.Name = "$mapkey. (" + key.RealType.String() + ")"
-				s.findRef(key, idx)
+				if key := it.key(); key != nil {
+					key.Name = "$mapkey. (" + key.RealType.String() + ")"
+					s.findRef(key, idx)
+				}
 				// find val ref
-				val := it.value()
-				val.Name = "$mapval. (" + val.RealType.String() + ")"
-				s.findRef(val, idx)
+				if val := it.value(); val != nil {
+					val.Name = "$mapval. (" + val.RealType.String() + ")"
+					s.findRef(val, idx)
+				}
+			}
+			// avoid missing memory
+			for _, obj := range it.objects {
+				if obj.hb.nextPtr(false) != 0 {
+					// still has pointer, add to the finalMarks
+					s.finalMarks = append(s.finalMarks, finalMarkParam{idx, obj.hb})
+				}
 			}
 			x.size += it.size
 			x.count += it.count

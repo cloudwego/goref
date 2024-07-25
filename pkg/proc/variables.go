@@ -78,7 +78,9 @@ func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf
 }
 
 func (v *ReferenceVariable) readPointer(addr Address) (uint64, error) {
-	v.hb.resetGCMask(v.Addr)
+	if err := v.hb.resetGCMask(addr); err != nil {
+		return 0, err
+	}
 	return readUintRaw(v.mem, uint64(addr), 8)
 }
 
@@ -113,6 +115,7 @@ type mapIterator struct {
 	hashMinTopHash      uint64 // minimum value of tophash for a cell that isn't either evacuated or empty
 
 	// for record ref mem
+	objects     []*ReferenceVariable
 	size, count int64
 }
 
@@ -150,10 +153,10 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable) (it *mapIterator, e
 			}
 			buckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem))
 			if buckets != nil {
-				buckets.Name = "buckets"
 				it.buckets = buckets
 				it.size += buckets.size
 				it.count += buckets.count
+				it.objects = append(it.objects, buckets)
 			}
 		case "oldbuckets": // +rtype -fieldof hmap unsafe.Pointer
 			var ptr uint64
@@ -163,10 +166,10 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable) (it *mapIterator, e
 			}
 			oldbuckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem))
 			if oldbuckets != nil {
-				oldbuckets.Name = "oldbuckets"
 				it.oldbuckets = oldbuckets
 				it.size += oldbuckets.size
 				it.count += oldbuckets.count
+				it.objects = append(it.objects, oldbuckets)
 			}
 		}
 	}
@@ -280,6 +283,7 @@ func (s *ObjRefScope) nextBucket(it *mapIterator) bool {
 			if it.overflow = s.findObject(Address(ptr), field.RealType.(*godwarf.PtrType).Type, proc.DereferenceMemory(it.b.mem)); it.overflow != nil {
 				it.count += it.overflow.count
 				it.size += it.overflow.size
+				it.objects = append(it.objects, it.overflow)
 			}
 		}
 	}
@@ -354,20 +358,28 @@ func (s *ObjRefScope) next(it *mapIterator) bool {
 }
 
 func (it *mapIterator) key() *ReferenceVariable {
-	k := it.keys.clone()
-	k.RealType = resolveTypedef(k.RealType.(*godwarf.ArrayType).Type)
-	k.Addr = k.Addr.Add(k.RealType.Size() * (it.idx - 1))
-	// limit heap bits to a single key
-	k.hb = newHeapBits(k.Addr, k.Addr.Add(k.RealType.Size()), k.hb.sp)
-	return k
+	return it.kv(it.keys.clone())
 }
 
 func (it *mapIterator) value() *ReferenceVariable {
-	v := it.values.clone()
+	return it.kv(it.values.clone())
+}
+
+func (it *mapIterator) kv(v *ReferenceVariable) *ReferenceVariable {
 	v.RealType = resolveTypedef(v.RealType.(*godwarf.ArrayType).Type)
 	v.Addr = v.Addr.Add(v.RealType.Size() * (it.idx - 1))
 	// limit heap bits to a single value
-	v.hb = newHeapBits(v.Addr, v.Addr.Add(v.RealType.Size()), v.hb.sp)
+	base, end := v.hb.base, v.hb.end
+	if base < v.Addr {
+		base = v.Addr
+	}
+	if end > v.Addr.Add(v.RealType.Size()) {
+		end = v.Addr.Add(v.RealType.Size())
+	}
+	if base >= end {
+		return nil
+	}
+	v.hb = newHeapBits(base, end, v.hb.sp)
 	return v
 }
 

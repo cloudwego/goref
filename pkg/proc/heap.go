@@ -471,15 +471,22 @@ func newHeapBits(base, end Address, sp *spanInfo) *heapBits {
 	return &heapBits{base: base, addr: base, end: end, sp: sp}
 }
 
+var errOutOfRange = errors.New("out of heap span range")
+
 // resetGCMask will reset ptrMask corresponding to the address,
 // which will never be marked again by the finalMark.
-func (hb *heapBits) resetGCMask(addr Address) {
+func (hb *heapBits) resetGCMask(addr Address) error {
 	if hb == nil {
-		return
+		return nil
 	}
 	// TODO: check gc mask
 	offset := addr.Sub(hb.sp.base)
+	// fallback for extreme scenarios
+	if offset < 0 || offset >= hb.sp.spanSize {
+		return errOutOfRange
+	}
 	hb.sp.ptrMask[offset/8/64] &= ^(1 << (offset / 8 % 64))
+	return nil
 }
 
 // nextPtr returns next ptr address starts from 'addr', returns 0 if not found.
