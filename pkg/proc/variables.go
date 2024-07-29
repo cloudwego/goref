@@ -84,13 +84,13 @@ func (v *ReferenceVariable) readPointer(addr Address) (uint64, error) {
 	return readUintRaw(v.mem, uint64(addr), 8)
 }
 
-// To avoid traversing fields/elements that escape the actual valid scope.
-// e.g. (*[1 << 16]scase)(unsafe.Pointer(cas0)) in runtime.selectgo.
-func (v *ReferenceVariable) isValid(addr Address) bool {
-	if v.hb == nil {
-		return true
+func (v *ReferenceVariable) readUint64(addr Address) (uint64, error) {
+	if v.hb != nil {
+		if addr < v.hb.base || addr >= v.hb.end {
+			return 0, errOutOfRange
+		}
 	}
-	return addr >= v.hb.base && addr < v.hb.end
+	return readUintRaw(v.mem, uint64(addr), 8)
 }
 
 type mapIterator struct {
@@ -277,7 +277,7 @@ func (s *ObjRefScope) nextBucket(it *mapIterator) bool {
 		case "overflow":
 			ptr, err := it.b.readPointer(field.Addr)
 			if err != nil {
-				logflags.DebuggerLogger().Errorf("could not load overflow variable: %v", err)
+				// logflags.DebuggerLogger().Errorf("could not load overflow variable: %v", err)
 				return false
 			}
 			if it.overflow = s.findObject(Address(ptr), field.RealType.(*godwarf.PtrType).Type, proc.DereferenceMemory(it.b.mem)); it.overflow != nil {
@@ -401,7 +401,7 @@ func (it *mapIterator) mapEvacuated(b *ReferenceVariable) bool {
 	return true
 }
 
-func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable, data *ReferenceVariable, isnil bool) {
+func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable, data *ReferenceVariable) {
 	// An interface variable is implemented either by a runtime.iface
 	// struct or a runtime.eface struct. The difference being that empty
 	// interfaces (i.e. "interface {}") are represented by runtime.eface
@@ -429,15 +429,13 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 	for _, f := range ityp.Field {
 		switch f.Name {
 		case "tab": // for runtime.iface
-			ptr, err := readUintRaw(v.mem, uint64(v.Addr.Add(f.ByteOffset)), int64(s.bi.Arch.PtrSize()))
+			ptr, err := v.readUint64(v.Addr.Add(f.ByteOffset))
 			if err != nil {
-				logflags.DebuggerLogger().Errorf("read tab err: %v", err)
 				continue
 			}
 			// +rtype *itab|*internal/abi.ITab
 			tab := newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(v.mem), nil)
-			isnil = tab.Addr == 0
-			if !isnil {
+			if tab.Addr != 0 {
 				for _, tf := range tab.RealType.(*godwarf.StructType).Field {
 					switch tf.Name {
 					case "Type":
@@ -450,17 +448,10 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 				}
 				if _type == nil {
 					logflags.DebuggerLogger().Errorf("invalid interface type")
-					return
 				}
 			}
 		case "_type": // for runtime.eface
 			_type = newVariable("", uint64(v.Addr.Add(f.ByteOffset)), f.Type, s.bi, v.mem)
-			ptr, err := readUintRaw(v.mem, _type.Addr, int64(s.bi.Arch.PtrSize()))
-			if err != nil {
-				logflags.DebuggerLogger().Errorf("read tab err: %v", err)
-				continue
-			}
-			isnil = ptr == 0
 		case "data":
 			data = newReferenceVariable(v.Addr.Add(f.ByteOffset), "", f.Type, v.mem, v.hb)
 		}
@@ -536,36 +527,22 @@ func readUint64Array(mem proc.MemoryReadWriter, addr uint64, res []uint64) (err 
 	return
 }
 
-func readStringInfo(str *ReferenceVariable) (uint64, int64, error) {
+func readStringInfo(str *ReferenceVariable) (addr, strlen uint64, err error) {
 	// string data structure is always two ptrs in size. Addr, followed by len
 	// http://research.swtch.com/godata
-
-	var strlen int64
-	var outaddr uint64
-	var err error
-
 	for _, field := range str.RealType.(*godwarf.StringType).StructType.Field {
 		switch field.Name {
 		case "len":
-			strlen, err = readIntRaw(str.mem, uint64(str.Addr.Add(field.ByteOffset)), 8)
-			if err != nil {
-				return 0, 0, fmt.Errorf("could not read string len %s", err)
-			}
-			if strlen < 0 {
-				return 0, 0, fmt.Errorf("invalid length: %d", strlen)
-			}
+			strlen, _ = str.readUint64(str.Addr.Add(field.ByteOffset))
 		case "str":
-			outaddr, err = str.readPointer(str.Addr.Add(field.ByteOffset))
+			addr, err = str.readPointer(str.Addr.Add(field.ByteOffset))
 			if err != nil {
-				return 0, 0, fmt.Errorf("could not read string pointer %s", err)
-			}
-			if outaddr == 0 {
-				return 0, 0, nil
+				return 0, 0, err
 			}
 		}
 	}
 
-	return outaddr, strlen, nil
+	return addr, strlen, nil
 }
 
 // alignAddr rounds up addr to a multiple of align. Align must be a power of 2.

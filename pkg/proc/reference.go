@@ -15,6 +15,7 @@
 package proc
 
 import (
+	"errors"
 	"log"
 	"os"
 	"reflect"
@@ -146,12 +147,14 @@ func (s *ObjRefScope) finalMark(idx *pprofIndex, hb *heapBits) {
 }
 
 // findRef finds sub refs of x, and records them to pprof buffer.
-func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
+func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error) {
 	if x.Name != "" {
-		// For array elem / map kv / struct field type, record them.
 		if idx != nil && idx.depth >= maxRefDepth {
+			// No scan for depth >= maxRefDepth, as it could lead to uncontrollable reference chain depths.
+			// No need to worry about memory not being able to be recorded, as the parent object will be finally scanned.
 			return
 		}
+		// For array elem / map kv / struct field type, record them.
 		idx = idx.pushHead(s.pb, x.Name)
 		defer func() { s.record(idx, x.size, x.count) }()
 	} else {
@@ -165,18 +168,20 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 	}
 	switch typ := x.RealType.(type) {
 	case *godwarf.PtrType:
-		ptrval, err := x.readPointer(x.Addr)
+		var ptrval uint64
+		ptrval, err = x.readPointer(x.Addr)
 		if err != nil {
 			return
 		}
 		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type), proc.DereferenceMemory(x.mem)); y != nil {
-			s.findRef(y, idx)
+			_ = s.findRef(y, idx)
 			// flatten reference
 			x.size += y.size
 			x.count += y.count
 		}
 	case *godwarf.ChanType:
-		ptrval, err := x.readPointer(x.Addr)
+		var ptrval uint64
+		ptrval, err = x.readPointer(x.Addr)
 		if err != nil {
 			return
 		}
@@ -197,36 +202,42 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 						return
 					}
 				case "dataqsiz":
-					chanLen, _ = y.readPointer(y.Addr.Add(field.ByteOffset))
+					chanLen, _ = y.readUint64(y.Addr.Add(field.ByteOffset))
 				}
 			}
 			if z := s.findObject(Address(zptrval), fakeArrayType(chanLen, typ.ElemType), y.mem); z != nil {
-				s.findRef(z, idx)
+				_ = s.findRef(z, idx)
 				x.size += z.size
 				x.count += z.count
 			}
 		}
 	case *godwarf.MapType:
-		ptrval, err := x.readPointer(x.Addr)
+		var ptrval uint64
+		ptrval, err = x.readPointer(x.Addr)
 		if err != nil {
 			return
 		}
 		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
-			it, err := s.toMapIterator(y)
+			var it *mapIterator
+			it, err = s.toMapIterator(y)
 			if err != nil {
-				logflags.DebuggerLogger().Errorf("toMapIterator failed: %v", err)
+				// logflags.DebuggerLogger().Errorf("toMapIterator failed: %v", err)
 				return
 			}
 			for s.next(it) {
 				// find key ref
 				if key := it.key(); key != nil {
 					key.Name = "$mapkey. (" + key.RealType.String() + ")"
-					s.findRef(key, idx)
+					if err := s.findRef(key, idx); errors.Is(err, errOutOfRange) {
+						continue
+					}
 				}
 				// find val ref
 				if val := it.value(); val != nil {
 					val.Name = "$mapval. (" + val.RealType.String() + ")"
-					s.findRef(val, idx)
+					if err := s.findRef(val, idx); errors.Is(err, errOutOfRange) {
+						continue
+					}
 				}
 			}
 			// avoid missing memory
@@ -240,18 +251,18 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 			x.count += it.count
 		}
 	case *godwarf.StringType:
-		strAddr, strLen, err := readStringInfo(x)
+		var strAddr, strLen uint64
+		strAddr, strLen, err = readStringInfo(x)
 		if err != nil {
 			return
 		}
-		if y := s.findObject(Address(strAddr), fakeArrayType(uint64(strLen), &godwarf.UintType{BasicType: godwarf.BasicType{CommonType: godwarf.CommonType{ByteSize: 1, Name: "byte", ReflectKind: reflect.Uint8}, BitSize: 8, BitOffset: 0}}), proc.DereferenceMemory(x.mem)); y != nil {
-			s.findRef(y, idx)
+		if y := s.findObject(Address(strAddr), fakeArrayType(strLen, &godwarf.UintType{BasicType: godwarf.BasicType{CommonType: godwarf.CommonType{ByteSize: 1, Name: "byte", ReflectKind: reflect.Uint8}, BitSize: 8, BitOffset: 0}}), proc.DereferenceMemory(x.mem)); y != nil {
+			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
 		}
 	case *godwarf.SliceType:
 		var base, cap_ uint64
-		var err error
 		for _, f := range typ.Field {
 			switch f.Name {
 			case "array":
@@ -260,26 +271,29 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 					return
 				}
 			case "cap":
-				cap_, _ = readUintRaw(x.mem, uint64(int64(x.Addr)+f.ByteOffset), f.Type.Size())
+				cap_, _ = x.readUint64(x.Addr.Add(f.ByteOffset))
 			}
 		}
 		if y := s.findObject(Address(base), fakeArrayType(cap_, typ.ElemType), proc.DereferenceMemory(x.mem)); y != nil {
-			s.findRef(y, idx)
+			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
 		}
 	case *godwarf.InterfaceType:
-		_type, data, _ := s.readInterface(x)
+		_type, data := s.readInterface(x)
 		if data == nil {
 			return
 		}
-		ptrval, err := data.readPointer(data.Addr)
+		var ptrval uint64
+		ptrval, err = data.readPointer(data.Addr)
 		if err != nil || ptrval == 0 {
 			return
 		}
 		var ityp godwarf.Type
 		if _type != nil {
-			rtyp, kind, err := proc.RuntimeTypeToDIE(_type, uint64(data.Addr), s.mds)
+			var rtyp godwarf.Type
+			var kind int64
+			rtyp, kind, err = proc.RuntimeTypeToDIE(_type, uint64(data.Addr), s.mds)
 			if err == nil {
 				if kind&kindDirectIface == 0 {
 					if _, isptr := resolveTypedef(rtyp).(*godwarf.PtrType); !isptr {
@@ -295,7 +309,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 			ityp = new(godwarf.VoidType)
 		}
 		if y := s.findObject(Address(ptrval), ityp, proc.DereferenceMemory(x.mem)); y != nil {
-			s.findRef(y, idx)
+			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
 		}
@@ -303,14 +317,13 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		typ = s.specialStructTypes(typ)
 		for _, field := range typ.Field {
 			fieldAddr := x.Addr.Add(field.ByteOffset)
-			if !x.isValid(fieldAddr) {
-				break
-			}
 			if isPrimitiveType(field.Type) {
 				continue
 			}
 			y := newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), x.mem, x.hb)
-			s.findRef(y, idx)
+			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
+				break
+			}
 		}
 	case *godwarf.ArrayType:
 		eType := resolveTypedef(typ.Type)
@@ -319,24 +332,25 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 		}
 		for i := int64(0); i < typ.Count; i++ {
 			elemAddr := x.Addr.Add(i * eType.Size())
-			if !x.isValid(elemAddr) {
-				break
-			}
 			// collapse 10+ elements by default
 			name := "[10+]"
 			if i < 10 {
 				name = "[" + strconv.Itoa(int(i)) + "]"
 			}
 			y := newReferenceVariable(elemAddr, name+". ("+eType.String()+")", eType, x.mem, x.hb)
-			s.findRef(y, idx)
+			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
+				break
+			}
 		}
 	case *godwarf.FuncType:
-		closureAddr, err := x.readPointer(x.Addr)
+		var closureAddr uint64
+		closureAddr, err = x.readPointer(x.Addr)
 		if err != nil || closureAddr == 0 {
 			return
 		}
 		var cst godwarf.Type
-		funcAddr, err := readUintRaw(proc.DereferenceMemory(x.mem), closureAddr, int64(s.bi.Arch.PtrSize()))
+		var funcAddr uint64
+		funcAddr, err = readUintRaw(proc.DereferenceMemory(x.mem), closureAddr, int64(s.bi.Arch.PtrSize()))
 		if err == nil && funcAddr != 0 {
 			if fn := s.bi.PCToFunc(funcAddr); fn != nil {
 				// cst := extra(fn, s.bi).closureStructType
@@ -349,18 +363,19 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) {
 			cst = new(godwarf.VoidType)
 		}
 		if closure := s.findObject(Address(closureAddr), cst, proc.DereferenceMemory(x.mem)); closure != nil {
-			s.findRef(closure, idx)
+			_ = s.findRef(closure, idx)
 			x.size += closure.size
 			x.count += closure.count
 		}
 	case *finalizePtrType:
 		if y := s.findObject(x.Addr, new(godwarf.VoidType), x.mem); y != nil {
-			s.findRef(y, idx)
+			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
 		}
 	default:
 	}
+	return
 }
 
 var atomicPointerRegex = regexp.MustCompile(`^sync/atomic\.Pointer\[.*\]$`)

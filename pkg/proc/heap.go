@@ -350,6 +350,7 @@ func (s *HeapScope) readType(sp *spanInfo, typeAddr, addr, end Address) {
 		}
 		mask, err := readUintRaw(mem, uint64(gcDataAddr.Add(addr.Sub(elem)/64)), 8)
 		if err != nil {
+			logflags.DebuggerLogger().Errorf("read gc data addr error: %v", err)
 			break
 		}
 		var headBits int64
@@ -482,6 +483,8 @@ func newHeapBits(base, end Address, sp *spanInfo) *heapBits {
 	return &heapBits{base: base, addr: base, end: end, sp: sp}
 }
 
+// To avoid traversing fields/elements that escape the actual valid scope.
+// e.g. (*[1 << 16]scase)(unsafe.Pointer(cas0)) in runtime.selectgo.
 var errOutOfRange = errors.New("out of heap span range")
 
 // resetGCMask will reset ptrMask corresponding to the address,
@@ -490,12 +493,11 @@ func (hb *heapBits) resetGCMask(addr Address) error {
 	if hb == nil {
 		return nil
 	}
-	// TODO: check gc mask
-	offset := addr.Sub(hb.sp.base)
-	// fallback for extreme scenarios
-	if offset < 0 || offset >= hb.sp.spanSize {
+	if addr < hb.base || addr >= hb.end {
 		return errOutOfRange
 	}
+	// TODO: check gc mask
+	offset := addr.Sub(hb.sp.base)
 	hb.sp.ptrMask[offset/8/64] &= ^(1 << (offset / 8 % 64))
 	return nil
 }
