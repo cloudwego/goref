@@ -317,9 +317,6 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		typ = s.specialStructTypes(typ)
 		for _, field := range typ.Field {
 			fieldAddr := x.Addr.Add(field.ByteOffset)
-			if isPrimitiveType(field.Type) {
-				continue
-			}
 			y := newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), x.mem, x.hb)
 			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
 				break
@@ -327,7 +324,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		}
 	case *godwarf.ArrayType:
 		eType := resolveTypedef(typ.Type)
-		if isPrimitiveType(eType) {
+		if !hasPtrType(eType) {
 			return
 		}
 		for i := int64(0); i < typ.Count; i++ {
@@ -395,15 +392,19 @@ func (s *ObjRefScope) specialStructTypes(st *godwarf.StructType) *godwarf.Struct
 	return st
 }
 
-func isPrimitiveType(typ godwarf.Type) bool {
-	if typ.Size() == 0 {
+func hasPtrType(t godwarf.Type) bool {
+	switch typ := t.(type) {
+	case *godwarf.PtrType, *godwarf.ChanType, *godwarf.MapType, *godwarf.StringType,
+		*godwarf.SliceType, *godwarf.InterfaceType, *godwarf.FuncType:
 		return true
-	}
-	typ = resolveTypedef(typ)
-	switch typ.(type) {
-	case *godwarf.BoolType, *godwarf.FloatType, *godwarf.UintType,
-		*godwarf.UcharType, *godwarf.CharType, *godwarf.IntType, *godwarf.ComplexType:
-		return true
+	case *godwarf.StructType:
+		for _, f := range typ.Field {
+			if hasPtrType(resolveTypedef(f.Type)) {
+				return true
+			}
+		}
+	case *godwarf.ArrayType:
+		return hasPtrType(resolveTypedef(typ.Type))
 	}
 	return false
 }
