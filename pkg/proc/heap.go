@@ -46,6 +46,14 @@ func (sp *spanInfo) mark(addr Address) bool {
 	}
 }
 
+func (sp *spanInfo) elemEnd(base Address) Address {
+	end := base.Add(sp.elemSize)
+	if end > sp.base.Add(sp.spanSize) {
+		end = sp.base.Add(sp.spanSize)
+	}
+	return end
+}
+
 type segment struct {
 	start, end Address
 	visitMask  []uint64
@@ -299,11 +307,11 @@ func (s *HeapScope) copyGCMask(sp *spanInfo, base Address) Address {
 	if sp.spanclass.sizeclass() != 0 {
 		// alloc type in header
 		typeAddr, _ := readUintRaw(s.mem, uint64(base), 8)
-		s.readType(sp, Address(typeAddr), base.Add(8), base.Add(sp.elemSize))
+		s.readType(sp, Address(typeAddr), base.Add(8), sp.elemEnd(base))
 		return base.Add(8)
 	} else {
 		// large type
-		s.readType(sp, Address(sp.largeTypeAddr), base, base.Add(sp.elemSize))
+		s.readType(sp, Address(sp.largeTypeAddr), base, sp.elemEnd(base))
 		return base
 	}
 }
@@ -312,12 +320,12 @@ func (s *HeapScope) readType(sp *spanInfo, typeAddr, addr, end Address) {
 	var typeSize, ptrBytes int64
 	var gcDataAddr Address
 	mem := cacheMemory(s.mem, uint64(typeAddr), int(gcDataOffset+8))
-	if typeSize_, err := readUintRaw(mem, uint64(typeAddr.Add(sizeOffset)), 8); err != nil {
+	if typeSize_, err := readUintRaw(mem, uint64(typeAddr.Add(sizeOffset)), 8); err != nil || typeSize_ == 0 {
 		return
 	} else {
 		typeSize = int64(typeSize_)
 	}
-	if ptrBytes_, err := readUintRaw(mem, uint64(typeAddr.Add(ptrBytesOffset)), 8); err != nil {
+	if ptrBytes_, err := readUintRaw(mem, uint64(typeAddr.Add(ptrBytesOffset)), 8); err != nil || ptrBytes_ == 0 {
 		return
 	} else {
 		ptrBytes = int64(ptrBytes_)
@@ -340,7 +348,11 @@ func (s *HeapScope) readType(sp *spanInfo, typeAddr, addr, end Address) {
 		if addr >= end {
 			break
 		}
-		mask, _ := readUintRaw(mem, uint64(gcDataAddr.Add(addr.Sub(elem)/64)), 8)
+		mask, err := readUintRaw(mem, uint64(gcDataAddr.Add(addr.Sub(elem)/64)), 8)
+		if err != nil {
+			logflags.DebuggerLogger().Errorf("read gc data addr error: %v", err)
+			break
+		}
 		var headBits int64
 		if addr.Add(8*64) > end {
 			headBits = (end.Sub(addr)) / 8
@@ -471,15 +483,23 @@ func newHeapBits(base, end Address, sp *spanInfo) *heapBits {
 	return &heapBits{base: base, addr: base, end: end, sp: sp}
 }
 
+// To avoid traversing fields/elements that escape the actual valid scope.
+// e.g. (*[1 << 16]scase)(unsafe.Pointer(cas0)) in runtime.selectgo.
+var errOutOfRange = errors.New("out of heap span range")
+
 // resetGCMask will reset ptrMask corresponding to the address,
 // which will never be marked again by the finalMark.
-func (hb *heapBits) resetGCMask(addr Address) {
+func (hb *heapBits) resetGCMask(addr Address) error {
 	if hb == nil {
-		return
+		return nil
+	}
+	if addr < hb.base || addr >= hb.end {
+		return errOutOfRange
 	}
 	// TODO: check gc mask
 	offset := addr.Sub(hb.sp.base)
 	hb.sp.ptrMask[offset/8/64] &= ^(1 << (offset / 8 % 64))
+	return nil
 }
 
 // nextPtr returns next ptr address starts from 'addr', returns 0 if not found.
