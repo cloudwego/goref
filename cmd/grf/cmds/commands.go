@@ -140,5 +140,11 @@ func execute(attachPid int, exeFile, coreFile, outFile string, conf *config.Conf
 		fmt.Fprintln(os.Stderr, err.Error())
 		return 1
 	}
+	err = dbg.Detach(false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "detach failed: %v\n", err)
+		return 1
+	}
+
 	return 0
 }
