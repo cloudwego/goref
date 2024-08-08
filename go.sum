@@ -6,8 +6,8 @@ github.com/creack/pty v1.1.20/go.mod h1:MOBLtS5ELjhRRrroQr9kyvTxUAFNvYEK993ew/Vr
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/go-delve/delve v1.23.1-0.20240720042956-64f3d346638c h1:r+xcs32/e1wZ+Njs+ao90N2xa08sXIF/UGTDvGo/HEI=
-github.com/go-delve/delve v1.23.1-0.20240720042956-64f3d346638c/go.mod h1:S3SLuEE2mn7wipKilTvk1p9HdTMnXXElcEpiZ+VcuqU=
+github.com/go-delve/delve v1.23.0 h1:jYgZISZ14KAO3ys8kD07kjrowrygE9F9SIwnpz9xXys=
+github.com/go-delve/delve v1.23.0/go.mod h1:S3SLuEE2mn7wipKilTvk1p9HdTMnXXElcEpiZ+VcuqU=
 github.com/go-quicktest/qt v1.101.0 h1:O1K29Txy5P2OK0dGo59b7b0LR6wKfIhttaAhHUyn7eI=
 github.com/go-quicktest/qt v1.101.0/go.mod h1:14Bz/f7NwaXPtdYEgzsx46kqSxVwTbzVZsDC26tQJow=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
