@@ -466,7 +466,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 				ms := myEvalScope{EvalScope: *proc.FrameToScope(t, t.Memory(), gr, threadID, sf[i:]...)}
 				locals, err := ms.Locals(mds)
 				if err != nil {
-					logflags.DebuggerLogger().Errorf("local variables err: %v", err)
+					logflags.DebuggerLogger().Warnf("local variables err: %v", err)
 					continue
 				}
 				for _, l := range locals {
