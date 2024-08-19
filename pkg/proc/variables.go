@@ -368,18 +368,21 @@ func (it *mapIterator) value() *ReferenceVariable {
 func (it *mapIterator) kv(v *ReferenceVariable) *ReferenceVariable {
 	v.RealType = resolveTypedef(v.RealType.(*godwarf.ArrayType).Type)
 	v.Addr = v.Addr.Add(v.RealType.Size() * (it.idx - 1))
-	// limit heap bits to a single value
-	base, end := v.hb.base, v.hb.end
-	if base < v.Addr {
-		base = v.Addr
+	// fixme(@jayantxie): use stackmap to get gc bits.
+	if v.hb != nil {
+		// limit heap bits to a single value
+		base, end := v.hb.base, v.hb.end
+		if base < v.Addr {
+			base = v.Addr
+		}
+		if end > v.Addr.Add(v.RealType.Size()) {
+			end = v.Addr.Add(v.RealType.Size())
+		}
+		if base >= end {
+			return nil
+		}
+		v.hb = newHeapBits(base, end, v.hb.sp)
 	}
-	if end > v.Addr.Add(v.RealType.Size()) {
-		end = v.Addr.Add(v.RealType.Size())
-	}
-	if base >= end {
-		return nil
-	}
-	v.hb = newHeapBits(base, end, v.hb.sp)
 	return v
 }
 
