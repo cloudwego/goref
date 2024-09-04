@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/cobra"
 
 	myproc "github.com/cloudwego/goref/pkg/proc"
+	"github.com/cloudwego/goref/pkg/version"
 )
 
 var (
@@ -87,6 +88,21 @@ You'll have to wait for goref until it outputs 'successfully output to ...', or 
 	}
 	coreCommand.Flags().StringVarP(&outFile, "out", "o", "grf.out", "output file name")
 	rootCommand.AddCommand(coreCommand)
+
+	versionVerbose := false
+	versionCommand := &cobra.Command{
+		Use:   "version",
+		Short: "Prints version.",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("Goref Tool\n%s\n", version.DelveVersion)
+			if versionVerbose {
+				fmt.Printf("Build Details: %s\n", version.BuildInfo())
+			}
+		},
+		ValidArgsFunction: cobra.NoFileCompletions,
+	}
+	versionCommand.Flags().BoolVarP(&versionVerbose, "verbose", "v", false, "print verbose version info")
+	rootCommand.AddCommand(versionCommand)
 
 	return rootCommand
 }

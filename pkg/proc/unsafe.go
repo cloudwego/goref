@@ -74,17 +74,17 @@ type functionExtra struct {
 
 	// rangeParent is set when this function is a range-over-func body closure
 	// and points to the function that the closure was generated from.
-	rangeParent *Function
+	rangeParent *proc.Function
 	// rangeBodies is the list of range-over-func body closures for this
 	// function. Only one between rangeParent and rangeBodies should be set at
 	// any given time.
-	rangeBodies []*Function
+	rangeBodies []*proc.Function
 }
 
 // Not support closure type before go1.23. TODO: support go1.23
 //
 //go:linkname extra github.com/go-delve/delve/pkg/proc.(*Function).extra
-func extra(f *Function, bi *BinaryInfo) (e *functionExtra)
+func extra(f *proc.Function, bi *proc.BinaryInfo) (e *functionExtra)
 */
 
 //go:linkname image github.com/go-delve/delve/pkg/proc.(*EvalScope).image
@@ -95,6 +95,9 @@ func getDwarfTree(image *proc.Image, off dwarf.Offset) (*godwarf.Tree, error)
 
 //go:linkname findType github.com/go-delve/delve/pkg/proc.(*BinaryInfo).findType
 func findType(bi *proc.BinaryInfo, name string) (godwarf.Type, error)
+
+//go:linkname funcToImage github.com/go-delve/delve/pkg/proc.(*BinaryInfo).funcToImage
+func funcToImage(bi *proc.BinaryInfo, fn *proc.Function) *proc.Image
 
 //go:linkname rangeParentName github.com/go-delve/delve/pkg/proc.(*Function).rangeParentName
 func rangeParentName(fn *proc.Function) string

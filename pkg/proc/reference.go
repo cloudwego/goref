@@ -23,6 +23,7 @@ import (
 	"strconv"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
+	"github.com/go-delve/delve/pkg/dwarf/reader"
 	"github.com/go-delve/delve/pkg/logflags"
 	"github.com/go-delve/delve/pkg/proc"
 )
@@ -350,10 +351,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		funcAddr, err = readUintRaw(proc.DereferenceMemory(x.mem), closureAddr, int64(s.bi.Arch.PtrSize()))
 		if err == nil && funcAddr != 0 {
 			if fn := s.bi.PCToFunc(funcAddr); fn != nil {
-				// cst := extra(fn, s.bi).closureStructType
-				cst = &godwarf.StructType{
-					Kind: "struct",
-				}
+				cst = s.closureStructType(fn)
 			}
 		}
 		if cst == nil {
@@ -373,6 +371,45 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 	default:
 	}
 	return
+}
+
+func (s *ObjRefScope) closureStructType(fn *proc.Function) *godwarf.StructType {
+	if st := s.closureStructTypes[fn]; st != nil {
+		return st
+	}
+	image := funcToImage(s.bi, fn)
+	dwarfTree, err := getDwarfTree(image, getFunctionOffset(fn))
+	if err != nil {
+		return nil
+	}
+	st := &godwarf.StructType{
+		Kind: "struct",
+	}
+	vars := reader.Variables(dwarfTree, 0, 0, reader.VariablesNoDeclLineCheck|reader.VariablesSkipInlinedSubroutines)
+	for _, v := range vars {
+		off, ok := v.Val(godwarf.AttrGoClosureOffset).(int64)
+		if ok {
+			n, typ, err := readVarEntry(v.Tree, image)
+			if err == nil {
+				sz := typ.Common().ByteSize
+				st.Field = append(st.Field, &godwarf.StructField{
+					Name:       n,
+					Type:       typ,
+					ByteOffset: off,
+					ByteSize:   sz,
+					BitOffset:  off * 8,
+					BitSize:    sz * 8,
+				})
+			}
+		}
+	}
+
+	if len(st.Field) > 0 {
+		lf := st.Field[len(st.Field)-1]
+		st.ByteSize = lf.ByteOffset + lf.Type.Common().ByteSize
+	}
+	s.closureStructTypes[fn] = st
+	return st
 }
 
 var atomicPointerRegex = regexp.MustCompile(`^sync/atomic\.Pointer\[.*\]$`)
@@ -419,7 +456,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 		return err
 	}
 
-	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope}
+	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope, closureStructTypes: make(map[*proc.Function]*godwarf.StructType)}
 	err = heapScope.readHeap()
 	if err != nil {
 		return err
