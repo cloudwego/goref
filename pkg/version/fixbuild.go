@@ -28,7 +28,7 @@ func buildInfoFixBuild(v *Version) {
 		return
 	}
 	for i := range info.Settings {
-		if info.Settings[i].Key == "gitrevision" {
+		if info.Settings[i].Key == "vcs.revision" {
 			v.Build = info.Settings[i].Value
 			break
 		}
