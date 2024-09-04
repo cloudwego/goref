@@ -41,65 +41,36 @@ type myEvalScope struct {
 	proc.EvalScope
 
 	dictAddr uint64 // dictionary address for instantiated generic functions
-
-	// enclosingRangeScopes []*proc.EvalScope
-	// rangeFrames          []proc.Stackframe
 }
 
-func (scope *myEvalScope) Locals(mds []proc.ModuleData) ([]*ReferenceVariable, error) {
-	// var scopes [][]*Variable
-	vars0, err := scope.simpleLocals(mds)
+func (scope *myEvalScope) Locals(t *proc.Target, g *proc.G, threadID int, mds []proc.ModuleData) ([]*ReferenceVariable, error) {
+	vars, err := scope.simpleLocals(mds)
 	if err != nil {
 		return nil, err
 	}
-	return vars0, nil
-	// TODO: support range-over-func
-	/*
-		if scope.Fn.extra(scope.BinInfo).rangeParent == nil || scope.target == nil || scope.g == nil {
-			return vars0, nil
-		}
-
-		scopes = append(scopes, vars0)
-
-		if scope.rangeFrames == nil {
-			scope.rangeFrames, err = rangeFuncStackTrace(scope.target, scope.g)
-			if err != nil {
-				return nil, err
-			}
-			scope.rangeFrames = scope.rangeFrames[1:]
-			scope.enclosingRangeScopes = make([]*EvalScope, len(scope.rangeFrames))
-		}
-		for i, scope2 := range scope.enclosingRangeScopes {
-			if i == len(scope.enclosingRangeScopes)-1 {
-				// Last one is the caller frame, we shouldn't check it
-				break
-			}
-			if scope2 == nil {
-				scope2 = FrameToScope(scope.target, scope.target.Memory(), scope.g, scope.threadID, scope.rangeFrames[i:]...)
-				scope.enclosingRangeScopes[i] = scope2
-			}
-			vars, err := scope2.simpleLocals0(flags, mds)
-			if err != nil {
-				return nil, err
-			}
-			scopes = append(scopes, vars)
-		}
-
-		vars := []*Variable{}
-		for i := len(scopes) - 1; i >= 0; i-- {
-			vars = append(vars, scopes[i]...)
-		}
-
-		// Apply shadowning
-		lvn := map[string]*Variable{}
-		for _, v := range vars {
-			if otherv := lvn[v.Name]; otherv != nil {
-				otherv.Flags |= VariableShadowed
-			}
-			lvn[v.Name] = v
-		}
+	if rpn := rangeParentName(scope.Fn.Name); rpn == "" {
 		return vars, nil
-	*/
+	}
+
+	rangeFrames, err := rangeFuncStackTrace(t, g)
+	if err != nil {
+		return vars, nil
+	}
+	rangeFrames = rangeFrames[2:] // skip the first frame and its return frame
+	enclosingRangeScopes := make([]*myEvalScope, len(rangeFrames)/2)
+
+	for i, scope2 := range enclosingRangeScopes {
+		if scope2 == nil {
+			scope2 := &myEvalScope{EvalScope: *proc.FrameToScope(t, t.Memory(), g, threadID, rangeFrames[2*i:]...)}
+			enclosingRangeScopes[i] = scope2
+		}
+		vars2, err := scope2.simpleLocals(mds)
+		if err != nil {
+			continue
+		}
+		vars = append(vars, vars2...)
+	}
+	return vars, nil
 }
 
 func (scope *myEvalScope) simpleLocals(mds []proc.ModuleData) ([]*ReferenceVariable, error) {
@@ -149,7 +120,7 @@ func (scope *myEvalScope) simpleLocals(mds []proc.ModuleData) ([]*ReferenceVaria
 		if name == goDictionaryName || name == goClosurePtr || strings.HasPrefix(name, "#state") || strings.HasPrefix(name, "&#state") || strings.HasPrefix(name, "#next") || strings.HasPrefix(name, "&#next") || strings.HasPrefix(name, "#yield") {
 			continue
 		}
-		if rangeParentName(scope.Fn) != "" {
+		if rangeParentName(scope.Fn.Name) != "" {
 			// Skip return values and closure variables for range-over-func closure bodies
 			if strings.HasPrefix(name, "~") {
 				continue
@@ -244,6 +215,25 @@ func runtimeTypeTypename(bi *proc.BinaryInfo) string {
 		return "internal/abi.Type"
 	}
 	return "runtime._type"
+}
+
+func rangeParentName(fnname string) string {
+	const rangeSuffix = "-range"
+	ridx := strings.Index(fnname, rangeSuffix)
+	if ridx <= 0 {
+		return ""
+	}
+	ok := true
+	for i := ridx + len(rangeSuffix); i < len(fnname); i++ {
+		if fnname[i] < '0' || fnname[i] > '9' {
+			ok = false
+			break
+		}
+	}
+	if !ok {
+		return ""
+	}
+	return fnname[:ridx]
 }
 
 type variablesByDepthAndDeclLine struct {
