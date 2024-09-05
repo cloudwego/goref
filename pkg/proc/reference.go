@@ -391,6 +391,10 @@ func (s *ObjRefScope) closureStructType(fn *proc.Function) *godwarf.StructType {
 		if ok {
 			n, typ, err := readVarEntry(v.Tree, image)
 			if err == nil {
+				if len(n) > 0 && n[0] == '&' {
+					// escaped variables
+					n = n[1:]
+				}
 				sz := typ.Common().ByteSize
 				st.Field = append(st.Field, &godwarf.StructField{
 					Name:       n,
