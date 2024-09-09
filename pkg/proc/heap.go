@@ -162,12 +162,10 @@ func (s *HeapScope) readHeap() error {
 	spans, spanInfos := s.readAllSpans(mheap.Field("allspans").Array(), spanInUse, kindSpecialFinalizer)
 
 	// start read arenas
-	if s.readArenas(mheap) {
-		return nil
+	if !s.readArenas(mheap) {
+		// read typed pointers when enabled alloc header
+		s.readTypePointers(spans, spanInfos)
 	}
-
-	// read typed pointers when enabled alloc header
-	s.readTypePointers(spans, spanInfos)
 
 	// read firstmoduledata
 	return s.readModuleData()
@@ -560,8 +558,8 @@ func (s *HeapScope) readModuleData() error {
 	firstmoduledata := toRegion(tmp, s.bi)
 	for md := firstmoduledata; md.a != 0; md = md.Field("next").Deref() {
 		var data, bss segment
-		data.init(Address(firstmoduledata.Field("data").Uintptr()), Address(firstmoduledata.Field("edata").Uintptr()))
-		bss.init(Address(firstmoduledata.Field("bss").Uintptr()), Address(firstmoduledata.Field("ebss").Uintptr()))
+		data.init(Address(md.Field("data").Uintptr()), Address(md.Field("edata").Uintptr()))
+		bss.init(Address(md.Field("bss").Uintptr()), Address(md.Field("ebss").Uintptr()))
 		s.data = append(s.data, &data)
 		s.bss = append(s.bss, &bss)
 	}
