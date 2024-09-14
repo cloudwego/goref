@@ -83,7 +83,3 @@ func newGCBitsIterator(base, end, maskBase Address, ptrMask []uint64) *gcMaskBit
 // To avoid traversing fields/elements that escape the actual valid scope.
 // e.g. (*[1 << 16]scase)(unsafe.Pointer(cas0)) in runtime.selectgo.
 var errOutOfRange = errors.New("out of heap span range")
-
-type resetGCMaskIface interface {
-	resetGCMask(addr Address) error
-}

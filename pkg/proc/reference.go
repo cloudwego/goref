@@ -47,30 +47,25 @@ func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem proc.Memory
 	sp, base := s.findSpanAndBase(addr)
 	if sp == nil {
 		// not in heap
+		var end Address
 		if suc, seg := s.bss.mark(addr); suc {
 			// in bss segment
-			if addr.Add(typ.Size()) <= seg.end {
-				v = newReferenceVariable(addr, "", resolveTypedef(typ), mem, nil, seg)
-			} else {
-				// There is an unsafe conversion, it is certain that another root object
-				// is referencing the memory, so there is no need to scan this object.
-			}
-			return
-		}
-		if suc, seg := s.data.mark(addr); suc {
+			end = seg.end
+		} else if suc, seg = s.data.mark(addr); suc {
 			// in data segment
-			if addr.Add(typ.Size()) <= seg.end {
-				v = newReferenceVariable(addr, "", resolveTypedef(typ), mem, nil, seg)
-			}
-			return
-		}
-		if s.g != nil && s.g.mark(addr) {
+			end = seg.end
+		} else if s.g != nil && s.g.mark(addr) {
 			// in g stack
-			if addr.Add(typ.Size()) <= s.g.end {
-				v = newReferenceVariable(addr, "", resolveTypedef(typ), mem, nil, s.g)
-			}
+			end = s.g.end
+		} else {
 			return
 		}
+		if addr.Add(typ.Size()) > end {
+			// There is an unsafe conversion, it is certain that another root object
+			// is referencing the memory, so there is no need to scan this object.
+			return
+		}
+		v = newReferenceVariable(addr, "", resolveTypedef(typ), mem, nil)
 		return
 	}
 	// Find mark bit
@@ -327,7 +322,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		typ = s.specialStructTypes(typ)
 		for _, field := range typ.Field {
 			fieldAddr := x.Addr.Add(field.ByteOffset)
-			y := newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), x.mem, x.hb, x.sb)
+			y := newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), x.mem, x.hb)
 			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
 				break
 			}
@@ -344,7 +339,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			if i < 10 {
 				name = "[" + strconv.Itoa(int(i)) + "]"
 			}
-			y := newReferenceVariable(elemAddr, name+". ("+eType.String()+")", eType, x.mem, x.hb, x.sb)
+			y := newReferenceVariable(elemAddr, name+". ("+eType.String()+")", eType, x.mem, x.hb)
 			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
 				break
 			}
@@ -499,14 +494,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 		if pv.Addr == 0 || disableDwarfSearching {
 			continue
 		}
-		addr := Address(pv.Addr)
-		var sb resetGCMaskIface
-		if suc, seg := s.bss.mark(addr); suc {
-			sb = seg
-		} else if suc, seg = s.data.mark(addr); suc {
-			sb = seg
-		}
-		s.findRef(newReferenceVariable(addr, pv.Name, pv.RealType, t.Memory(), nil, sb), nil)
+		s.findRef(newReferenceVariable(Address(pv.Addr), pv.Name, pv.RealType, t.Memory(), nil), nil)
 	}
 
 	// Local variables
@@ -532,9 +520,6 @@ func ObjectReference(t *proc.Target, filename string) error {
 					if l.Addr == 0 || disableDwarfSearching {
 						continue
 					}
-					if s.g.mark(l.Addr) {
-						l.sb = s.g
-					}
 					if l.Name[0] == '&' {
 						// escaped variables
 						l.Name = l.Name[1:]
@@ -544,11 +529,11 @@ func ObjectReference(t *proc.Target, filename string) error {
 				}
 			}
 		}
-		// scan gc bits in case dwarf searching failure
+		// scan root gc bits in case dwarf searching failure
 		for _, fr := range s.g.frames {
 			it := &(fr.gcMaskBitIterator)
 			if it.nextPtr(false) != 0 {
-				// still has pointer, add to the finalMarks
+				// add to the finalMarks
 				idx := (*pprofIndex)(nil).pushHead(s.pb, fr.funcName)
 				s.finalMarks = append(s.finalMarks, finalMarkParam{idx, it})
 			}
@@ -560,7 +545,6 @@ func ObjectReference(t *proc.Target, filename string) error {
 	for i, seg := range s.bss {
 		it := &(seg.gcMaskBitIterator)
 		if it.nextPtr(false) != 0 {
-			// still has pointer, add to the finalMarks
 			idx := (*pprofIndex)(nil).pushHead(s.pb, fmt.Sprintf("bss segment[%d]", i))
 			s.finalMarks = append(s.finalMarks, finalMarkParam{idx, it})
 		}
@@ -568,7 +552,6 @@ func ObjectReference(t *proc.Target, filename string) error {
 	for i, seg := range s.data {
 		it := &(seg.gcMaskBitIterator)
 		if it.nextPtr(false) != 0 {
-			// still has pointer, add to the finalMarks
 			idx := (*pprofIndex)(nil).pushHead(s.pb, fmt.Sprintf("data segment[%d]", i))
 			s.finalMarks = append(s.finalMarks, finalMarkParam{idx, it})
 		}
@@ -577,9 +560,9 @@ func ObjectReference(t *proc.Target, filename string) error {
 	// Finalizers
 	for _, fin := range heapScope.finalizers {
 		// scan object
-		s.findRef(newReferenceVariable(fin.p, "finalized", new(finalizePtrType), s.mem, nil, nil), nil)
+		s.findRef(newReferenceVariable(fin.p, "finalized", new(finalizePtrType), s.mem, nil), nil)
 		// scan finalizer
-		s.findRef(newReferenceVariable(fin.fn, "finalizer", new(godwarf.FuncType), s.mem, nil, nil), nil)
+		s.findRef(newReferenceVariable(fin.fn, "finalizer", new(godwarf.FuncType), s.mem, nil), nil)
 	}
 
 	for _, param := range s.finalMarks {

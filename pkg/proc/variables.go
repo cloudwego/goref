@@ -59,8 +59,6 @@ type ReferenceVariable struct {
 
 	// heap bits for this object
 	hb *gcMaskBitIterator
-	// stack/segment bits for this object
-	sb resetGCMaskIface
 
 	// node size
 	size int64
@@ -68,24 +66,19 @@ type ReferenceVariable struct {
 	count int64
 }
 
-func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator, sb resetGCMaskIface) *ReferenceVariable {
-	return &ReferenceVariable{Addr: addr, Name: name, RealType: typ, mem: mem, hb: hb, sb: sb}
+func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator) *ReferenceVariable {
+	return &ReferenceVariable{Addr: addr, Name: name, RealType: typ, mem: mem, hb: hb}
 }
 
 func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator, size, count int64) *ReferenceVariable {
-	rv := newReferenceVariable(addr, name, typ, mem, hb, nil)
+	rv := newReferenceVariable(addr, name, typ, mem, hb)
 	rv.size, rv.count = size, count
 	return rv
 }
 
 func (v *ReferenceVariable) readPointer(addr Address) (uint64, error) {
-	if v.hb != nil {
-		if err := v.hb.resetGCMask(addr); err != nil {
-			return 0, err
-		}
-	} else if v.sb != nil {
-		// ignore stack/segment bits errors, todo
-		_ = v.sb.resetGCMask(addr)
+	if err := v.hb.resetGCMask(addr); err != nil {
+		return 0, err
 	}
 	return readUintRaw(v.mem, uint64(addr), 8)
 }
@@ -272,7 +265,7 @@ func (s *ObjRefScope) nextBucket(it *mapIterator) bool {
 	it.overflow = nil
 
 	for _, f := range it.b.RealType.(*godwarf.StructType).Field {
-		field := newReferenceVariable(it.b.Addr.Add(f.ByteOffset), f.Name, resolveTypedef(f.Type), it.b.mem, it.b.hb, it.b.sb)
+		field := newReferenceVariable(it.b.Addr.Add(f.ByteOffset), f.Name, resolveTypedef(f.Type), it.b.mem, it.b.hb)
 		switch f.Name {
 		case "tophash": // +rtype -fieldof bmap [8]uint8
 			it.tophashes = field
@@ -442,7 +435,7 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 				continue
 			}
 			// +rtype *itab|*internal/abi.ITab
-			tab := newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(v.mem), nil, nil)
+			tab := newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(v.mem), nil)
 			if tab.Addr != 0 {
 				for _, tf := range tab.RealType.(*godwarf.StructType).Field {
 					switch tf.Name {
@@ -461,7 +454,7 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 		case "_type": // for runtime.eface
 			_type = newVariable("", uint64(v.Addr.Add(f.ByteOffset)), f.Type, s.bi, v.mem)
 		case "data":
-			data = newReferenceVariable(v.Addr.Add(f.ByteOffset), "", f.Type, v.mem, v.hb, v.sb)
+			data = newReferenceVariable(v.Addr.Add(f.ByteOffset), "", f.Type, v.mem, v.hb)
 		}
 	}
 	return

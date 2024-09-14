@@ -86,13 +86,6 @@ func (r *region) Deref() *region {
 	}
 }
 
-// Cast the region to the given type.
-func (r *region) Cast(typ godwarf.Type) *region {
-	nr := *r
-	nr.typ = typ
-	return &nr
-}
-
 // Uint64 returns the uint64 value stored in r.
 // r must have type uint64.
 func (r *region) Uint64() uint64 {

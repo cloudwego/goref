@@ -19,7 +19,6 @@ import (
 	"go/constant"
 	"math"
 	"math/bits"
-	"sort"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/go-delve/delve/pkg/logflags"
@@ -105,10 +104,10 @@ type framePointerMask struct {
 type stack struct {
 	start, end Address
 	visitMask  []uint64
-	frames     []framePointerMask
+	frames     []*framePointerMask
 }
 
-func (s *stack) init(start, end Address, frames []framePointerMask) {
+func (s *stack) init(start, end Address, frames []*framePointerMask) {
 	s.start, s.end = start, end
 	s.visitMask = make([]uint64, CeilDivide(int64((end-start)/8), 64))
 	s.frames = frames
@@ -127,35 +126,8 @@ func (s *stack) mark(addr Address) (success bool) {
 	return false
 }
 
-func (s *stack) resetGCMask(addr Address) error {
-	if s == nil {
-		return nil
-	}
-	if addr < s.start || addr >= s.end {
-		return errOutOfRange
-	}
-	idx := sort.Search(len(s.frames), func(i int) bool {
-		minAddr := s.frames[i].base
-		maxAddr := s.frames[i].end
-		return addr <= minAddr || (minAddr <= addr && addr < maxAddr)
-	})
-	if idx >= len(s.frames) {
-		return nil
-	}
-	base := s.frames[idx].base
-	end := s.frames[idx].end
-	if base <= addr && addr < end {
-		offset := addr.Sub(base)
-		s.frames[idx].mask[offset/8/64] &= ^(1 << (offset / 8 % 64))
-	}
-	return nil
-}
-
 type funcExtra struct {
 	closureStructType *godwarf.StructType // closure struct type only support go 1.23 and later
-
-	funcdata []Address
-	stackMap pcTab
 }
 
 // HeapScope contains the proc info for this round of scanning.
@@ -188,8 +160,7 @@ type HeapScope struct {
 
 	finalMarks []finalMarkParam
 
-	funcExtraMap  map[*proc.Function]funcExtra
-	textAddrCache *textCache
+	funcExtraMap map[*proc.Function]funcExtra
 }
 
 func (s *HeapScope) readHeap() error {
@@ -549,15 +520,13 @@ func (s *HeapScope) readModuleData() error {
 	}
 	firstmoduledata := toRegion(tmp, s.bi)
 
-	_funcType, _ := findType(s.bi, "runtime._func")
 	for md := firstmoduledata; md.a != 0; md = md.Field("next").Deref() {
-		if data := s.parseSegment("data", md); data != nil {
+		if data := s.parseSegment("data", md); data != nil && data.base != 0 {
 			s.data = append(s.data, data)
 		}
-		if bss := s.parseSegment("bss", md); bss != nil {
+		if bss := s.parseSegment("bss", md); bss != nil && bss.base != 0 {
 			s.bss = append(s.bss, bss)
 		}
-		s.readFuncTab(md, _funcType)
 	}
 	return nil
 }
@@ -565,9 +534,6 @@ func (s *HeapScope) readModuleData() error {
 func (s *HeapScope) parseSegment(name string, md *region) *segment {
 	var seg segment
 	minAddr := Address(md.Field(name).Uintptr())
-	if minAddr == 0 {
-		return nil
-	}
 	maxAddr := Address(md.Field("e" + name).Uintptr())
 	gcmask := md.Field("gc" + name + "mask").Field("bytedata").Address()
 	ptrNum := int64((maxAddr - minAddr) / 8)
@@ -583,6 +549,32 @@ func (s *HeapScope) parseSegment(name string, md *region) *segment {
 	}
 	seg.init(minAddr, maxAddr, ptrMask)
 	return &seg
+}
+
+// Support for stackmap greatly couples the underlying implementation of go runtime,
+// which is extremely complex to handle and is not conducive to the maintenance of the project.
+// Therefore, Goref adopts a conservative scanning scheme.
+// NOTE: This may lead to scanning an additional portion of memory.
+func (s *HeapScope) stackPtrMask(frames []proc.Stackframe) []*framePointerMask {
+	var frPtrMasks []*framePointerMask
+	for i := range frames {
+		pc := frames[i].Regs.PC()
+		fn := s.bi.PCToFunc(pc)
+		if fn == nil {
+			continue
+		}
+		sp := Address(frames[i].Regs.SP())
+		fp := Address(frames[i].Regs.FrameBase)
+		ptrMask := make([]uint64, CeilDivide(fp.Sub(sp)/8, 64))
+		for i := range ptrMask {
+			ptrMask[i] = ^uint64(0)
+		}
+		frPtrMasks = append(frPtrMasks, &framePointerMask{
+			funcName:          fn.Name,
+			gcMaskBitIterator: *newGCBitsIterator(sp, fp, sp, ptrMask),
+		})
+	}
+	return frPtrMasks
 }
 
 type finalizer struct {
