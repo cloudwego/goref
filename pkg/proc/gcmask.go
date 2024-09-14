@@ -25,7 +25,6 @@ type gcMaskBitIterator struct {
 	maskBase Address
 	mask     []uint64
 
-	// for iterator
 	addr Address // iterator address
 }
 

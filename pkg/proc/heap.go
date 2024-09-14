@@ -373,7 +373,7 @@ func (s *HeapScope) readType(sp *spanInfo, typeAddr, addr, end Address) {
 		}
 		mask, err := readUintRaw(mem, uint64(gcDataAddr.Add(addr.Sub(elem)/64)), 8)
 		if err != nil {
-			logflags.DebuggerLogger().Errorf("read gc data addr error: %v", err)
+			logflags.DebuggerLogger().Warnf("read gc data addr error: %v", err)
 			break
 		}
 		var headBits int64

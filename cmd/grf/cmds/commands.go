@@ -36,6 +36,9 @@ var (
 	conf        *config.Config
 	loadConfErr error
 	outFile     string
+
+	// verbose is whether to log verbose info, like debug logs.
+	verbose bool
 )
 
 // New returns an initialized command tree.
@@ -89,20 +92,20 @@ You'll have to wait for goref until it outputs 'successfully output to ...', or 
 	coreCommand.Flags().StringVarP(&outFile, "out", "o", "grf.out", "output file name")
 	rootCommand.AddCommand(coreCommand)
 
-	versionVerbose := false
 	versionCommand := &cobra.Command{
 		Use:   "version",
 		Short: "Prints version.",
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf("Goref Tool\n%s\n", version.DelveVersion)
-			if versionVerbose {
+			if verbose {
 				fmt.Printf("Build Details: %s\n", version.BuildInfo())
 			}
 		},
 		ValidArgsFunction: cobra.NoFileCompletions,
 	}
-	versionCommand.Flags().BoolVarP(&versionVerbose, "verbose", "v", false, "print verbose version info")
 	rootCommand.AddCommand(versionCommand)
+
+	rootCommand.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "print verbose info or enable debug logger")
 
 	return rootCommand
 }
@@ -129,6 +132,13 @@ func coreCmd(_ *cobra.Command, args []string) {
 }
 
 func execute(attachPid int, exeFile, coreFile, outFile string, conf *config.Config) int {
+	if verbose {
+		if err := logflags.Setup(verbose, "", ""); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return 1
+		}
+		defer logflags.Close()
+	}
 	if loadConfErr != nil {
 		logflags.DebuggerLogger().Errorf("%v", loadConfErr)
 	}
