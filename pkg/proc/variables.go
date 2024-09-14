@@ -58,8 +58,9 @@ type ReferenceVariable struct {
 	mem      proc.MemoryReadWriter
 
 	// heap bits for this object
-	// hb.base equals to Addr, hb.end equals to min(Addr.Add(RealType.Size), heapBase.Add(elemSize))
-	hb *heapBits
+	hb *gcMaskBitIterator
+	// stack/segment bits for this object
+	sb resetGCMaskIface
 
 	// node size
 	size int64
@@ -67,19 +68,24 @@ type ReferenceVariable struct {
 	count int64
 }
 
-func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *heapBits) *ReferenceVariable {
-	return &ReferenceVariable{Addr: addr, Name: name, RealType: typ, mem: mem, hb: hb}
+func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator, sb resetGCMaskIface) *ReferenceVariable {
+	return &ReferenceVariable{Addr: addr, Name: name, RealType: typ, mem: mem, hb: hb, sb: sb}
 }
 
-func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *heapBits, size, count int64) *ReferenceVariable {
-	rv := newReferenceVariable(addr, name, typ, mem, hb)
+func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator, size, count int64) *ReferenceVariable {
+	rv := newReferenceVariable(addr, name, typ, mem, hb, nil)
 	rv.size, rv.count = size, count
 	return rv
 }
 
 func (v *ReferenceVariable) readPointer(addr Address) (uint64, error) {
-	if err := v.hb.resetGCMask(addr); err != nil {
-		return 0, err
+	if v.hb != nil {
+		if err := v.hb.resetGCMask(addr); err != nil {
+			return 0, err
+		}
+	} else if v.sb != nil {
+		// ignore stack/segment bits errors, todo
+		_ = v.sb.resetGCMask(addr)
 	}
 	return readUintRaw(v.mem, uint64(addr), 8)
 }
@@ -266,7 +272,7 @@ func (s *ObjRefScope) nextBucket(it *mapIterator) bool {
 	it.overflow = nil
 
 	for _, f := range it.b.RealType.(*godwarf.StructType).Field {
-		field := newReferenceVariable(it.b.Addr.Add(f.ByteOffset), f.Name, resolveTypedef(f.Type), it.b.mem, it.b.hb)
+		field := newReferenceVariable(it.b.Addr.Add(f.ByteOffset), f.Name, resolveTypedef(f.Type), it.b.mem, it.b.hb, it.b.sb)
 		switch f.Name {
 		case "tophash": // +rtype -fieldof bmap [8]uint8
 			it.tophashes = field
@@ -368,7 +374,6 @@ func (it *mapIterator) value() *ReferenceVariable {
 func (it *mapIterator) kv(v *ReferenceVariable) *ReferenceVariable {
 	v.RealType = resolveTypedef(v.RealType.(*godwarf.ArrayType).Type)
 	v.Addr = v.Addr.Add(v.RealType.Size() * (it.idx - 1))
-	// fixme(@jayantxie): use stackmap to get gc bits.
 	if v.hb != nil {
 		// limit heap bits to a single value
 		base, end := v.hb.base, v.hb.end
@@ -381,7 +386,7 @@ func (it *mapIterator) kv(v *ReferenceVariable) *ReferenceVariable {
 		if base >= end {
 			return nil
 		}
-		v.hb = newHeapBits(base, end, v.hb.sp)
+		v.hb = newGCBitsIterator(base, end, v.hb.maskBase, v.hb.mask)
 	}
 	return v
 }
@@ -437,7 +442,7 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 				continue
 			}
 			// +rtype *itab|*internal/abi.ITab
-			tab := newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(v.mem), nil)
+			tab := newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(v.mem), nil, nil)
 			if tab.Addr != 0 {
 				for _, tf := range tab.RealType.(*godwarf.StructType).Field {
 					switch tf.Name {
@@ -456,7 +461,7 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 		case "_type": // for runtime.eface
 			_type = newVariable("", uint64(v.Addr.Add(f.ByteOffset)), f.Type, s.bi, v.mem)
 		case "data":
-			data = newReferenceVariable(v.Addr.Add(f.ByteOffset), "", f.Type, v.mem, v.hb)
+			data = newReferenceVariable(v.Addr.Add(f.ByteOffset), "", f.Type, v.mem, v.hb, v.sb)
 		}
 	}
 	return
@@ -590,4 +595,12 @@ func resolveTypedef(typ godwarf.Type) godwarf.Type {
 			return typ
 		}
 	}
+}
+
+func CeilDivide(n, d int64) int64 {
+	r := n / d
+	if n%d > 0 {
+		r++
+	}
+	return r
 }

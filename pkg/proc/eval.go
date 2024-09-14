@@ -180,7 +180,8 @@ func extractVarInfoFromEntry(bi *proc.BinaryInfo, image *proc.Image, regs op.Dwa
 		}
 	}
 
-	v := newReferenceVariable(Address(uaddr), n, resolveTypedef(t), mem, nil)
+	// delay setting stack bits in reference.go
+	v := newReferenceVariable(Address(uaddr), n, resolveTypedef(t), mem, nil, nil)
 	return v, nil
 }
 

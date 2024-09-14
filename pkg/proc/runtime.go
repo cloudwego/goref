@@ -62,3 +62,22 @@ func init() {
 	sf, _ = rtype.FieldByName("GCData")
 	gcDataOffset = int64(sf.Offset)
 }
+
+// IDs for PCDATA and FUNCDATA tables in Go binaries.
+//
+// These must agree with internal/abi/symtab.go
+const (
+	PCDATA_UnsafePoint   = 0
+	PCDATA_StackMapIndex = 1
+	PCDATA_InlTreeIndex  = 2
+	PCDATA_ArgLiveIndex  = 3
+
+	FUNCDATA_ArgsPointerMaps    = 0
+	FUNCDATA_LocalsPointerMaps  = 1
+	FUNCDATA_StackObjects       = 2
+	FUNCDATA_InlTree            = 3
+	FUNCDATA_OpenCodedDeferInfo = 4
+	FUNCDATA_ArgInfo            = 5
+	FUNCDATA_ArgLiveInfo        = 6
+	FUNCDATA_WrapInfo           = 7
+)

@@ -16,6 +16,7 @@ package proc
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"reflect"
@@ -28,7 +29,10 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
-const maxRefDepth = 256
+const (
+	maxRefDepth           = 256
+	disableDwarfSearching = false
+)
 
 type ObjRefScope struct {
 	*HeapScope
@@ -43,24 +47,29 @@ func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem proc.Memory
 	sp, base := s.findSpanAndBase(addr)
 	if sp == nil {
 		// not in heap
-		var seg *segment
-		var suc bool
-		if suc, seg = s.bss.mark(addr); suc {
+		if suc, seg := s.bss.mark(addr); suc {
 			// in bss segment
-		} else if suc, seg = s.data.mark(addr); suc {
-			// in data segment
-		} else if s.g != nil && s.g.mark(addr) {
-			// in g stack
-			seg = &s.g.segment
-		}
-		if seg != nil {
-			if addr.Add(typ.Size()) > seg.end {
+			if addr.Add(typ.Size()) <= seg.end {
+				v = newReferenceVariable(addr, "", resolveTypedef(typ), mem, nil, seg)
+			} else {
 				// There is an unsafe conversion, it is certain that another root object
 				// is referencing the memory, so there is no need to scan this object.
-				return
 			}
-			// TODO: using stackmap and gcbssmask
-			v = newReferenceVariable(addr, "", resolveTypedef(typ), mem, nil)
+			return
+		}
+		if suc, seg := s.data.mark(addr); suc {
+			// in data segment
+			if addr.Add(typ.Size()) <= seg.end {
+				v = newReferenceVariable(addr, "", resolveTypedef(typ), mem, nil, seg)
+			}
+			return
+		}
+		if s.g != nil && s.g.mark(addr) {
+			// in g stack
+			if addr.Add(typ.Size()) <= s.g.end {
+				v = newReferenceVariable(addr, "", resolveTypedef(typ), mem, nil, s.g)
+			}
+			return
 		}
 		return
 	}
@@ -71,7 +80,7 @@ func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem proc.Memory
 	realBase := s.copyGCMask(sp, base)
 
 	// heap bits searching
-	hb := newHeapBits(realBase, sp.elemEnd(base), sp)
+	hb := newGCBitsIterator(realBase, sp.elemEnd(base), sp.base, sp.ptrMask)
 	if hb.nextPtr(false) != 0 {
 		// has pointer, cache mem
 		mem = cacheMemory(mem, uint64(base), int(sp.elemSize))
@@ -91,7 +100,7 @@ func (s *HeapScope) markObject(addr Address, mem proc.MemoryReadWriter) (size, c
 	}
 	realBase := s.copyGCMask(sp, base)
 	size, count = sp.elemSize, 1
-	hb := newHeapBits(realBase, sp.elemEnd(base), sp)
+	hb := newGCBitsIterator(realBase, sp.elemEnd(base), sp.base, sp.ptrMask)
 	var cmem proc.MemoryReadWriter
 	for {
 		ptr := hb.nextPtr(true)
@@ -121,10 +130,10 @@ func (s *ObjRefScope) record(idx *pprofIndex, size, count int64) {
 
 type finalMarkParam struct {
 	idx *pprofIndex
-	hb  *heapBits
+	hb  *gcMaskBitIterator
 }
 
-func (s *ObjRefScope) finalMark(idx *pprofIndex, hb *heapBits) {
+func (s *ObjRefScope) finalMark(idx *pprofIndex, hb *gcMaskBitIterator) {
 	var ptr Address
 	var size, count int64
 	var cmem proc.MemoryReadWriter
@@ -318,7 +327,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		typ = s.specialStructTypes(typ)
 		for _, field := range typ.Field {
 			fieldAddr := x.Addr.Add(field.ByteOffset)
-			y := newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), x.mem, x.hb)
+			y := newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), x.mem, x.hb, x.sb)
 			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
 				break
 			}
@@ -335,7 +344,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			if i < 10 {
 				name = "[" + strconv.Itoa(int(i)) + "]"
 			}
-			y := newReferenceVariable(elemAddr, name+". ("+eType.String()+")", eType, x.mem, x.hb)
+			y := newReferenceVariable(elemAddr, name+". ("+eType.String()+")", eType, x.mem, x.hb, x.sb)
 			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
 				break
 			}
@@ -374,8 +383,9 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 }
 
 func (s *ObjRefScope) closureStructType(fn *proc.Function) *godwarf.StructType {
-	if st := s.closureStructTypes[fn]; st != nil {
-		return st
+	var fe funcExtra
+	if fe = s.funcExtraMap[fn]; fe.closureStructType != nil {
+		return fe.closureStructType
 	}
 	image := funcToImage(s.bi, fn)
 	dwarfTree, err := getDwarfTree(image, getFunctionOffset(fn))
@@ -412,7 +422,8 @@ func (s *ObjRefScope) closureStructType(fn *proc.Function) *godwarf.StructType {
 		lf := st.Field[len(st.Field)-1]
 		st.ByteSize = lf.ByteOffset + lf.Type.Common().ByteSize
 	}
-	s.closureStructTypes[fn] = st
+	fe.closureStructType = st
+	s.funcExtraMap[fn] = fe
 	return st
 }
 
@@ -460,7 +471,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 		return err
 	}
 
-	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope, closureStructTypes: make(map[*proc.Function]*godwarf.StructType)}
+	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope, funcExtraMap: make(map[*proc.Function]funcExtra)}
 	err = heapScope.readHeap()
 	if err != nil {
 		return err
@@ -485,10 +496,17 @@ func ObjectReference(t *proc.Target, filename string) error {
 	// Global variables
 	pvs, _ := scope.PackageVariables(loadSingleValue)
 	for _, pv := range pvs {
-		if pv.Addr == 0 {
+		if pv.Addr == 0 || disableDwarfSearching {
 			continue
 		}
-		s.findRef(newReferenceVariable(Address(pv.Addr), pv.Name, pv.RealType, t.Memory(), nil), nil)
+		addr := Address(pv.Addr)
+		var sb resetGCMaskIface
+		if suc, seg := s.bss.mark(addr); suc {
+			sb = seg
+		} else if suc, seg = s.data.mark(addr); suc {
+			sb = seg
+		}
+		s.findRef(newReferenceVariable(addr, pv.Name, pv.RealType, t.Memory(), nil, sb), nil)
 	}
 
 	// Local variables
@@ -497,11 +515,11 @@ func ObjectReference(t *proc.Target, filename string) error {
 	for _, gr := range grs {
 		s.g = &stack{}
 		lo, hi := getStack(gr)
-		s.g.init(Address(lo), Address(hi))
 		if gr.Thread != nil {
 			threadID = gr.Thread.ThreadID()
 		}
 		sf, _ := proc.GoroutineStacktrace(t, gr, 1024, 0)
+		s.g.init(Address(lo), Address(hi), s.stackPtrMask(sf))
 		if len(sf) > 0 {
 			for i := range sf {
 				ms := myEvalScope{EvalScope: *proc.FrameToScope(t, t.Memory(), gr, threadID, sf[i:]...)}
@@ -511,8 +529,11 @@ func ObjectReference(t *proc.Target, filename string) error {
 					continue
 				}
 				for _, l := range locals {
-					if l.Addr == 0 {
+					if l.Addr == 0 || disableDwarfSearching {
 						continue
+					}
+					if s.g.mark(l.Addr) {
+						l.sb = s.g
 					}
 					if l.Name[0] == '&' {
 						// escaped variables
@@ -523,15 +544,42 @@ func ObjectReference(t *proc.Target, filename string) error {
 				}
 			}
 		}
+		// scan gc bits in case dwarf searching failure
+		for _, fr := range s.g.frames {
+			it := &(fr.gcMaskBitIterator)
+			if it.nextPtr(false) != 0 {
+				// still has pointer, add to the finalMarks
+				idx := (*pprofIndex)(nil).pushHead(s.pb, fr.funcName)
+				s.finalMarks = append(s.finalMarks, finalMarkParam{idx, it})
+			}
+		}
 	}
 	s.g = nil
+
+	// final mark segment root bits
+	for i, seg := range s.bss {
+		it := &(seg.gcMaskBitIterator)
+		if it.nextPtr(false) != 0 {
+			// still has pointer, add to the finalMarks
+			idx := (*pprofIndex)(nil).pushHead(s.pb, fmt.Sprintf("bss segment[%d]", i))
+			s.finalMarks = append(s.finalMarks, finalMarkParam{idx, it})
+		}
+	}
+	for i, seg := range s.data {
+		it := &(seg.gcMaskBitIterator)
+		if it.nextPtr(false) != 0 {
+			// still has pointer, add to the finalMarks
+			idx := (*pprofIndex)(nil).pushHead(s.pb, fmt.Sprintf("data segment[%d]", i))
+			s.finalMarks = append(s.finalMarks, finalMarkParam{idx, it})
+		}
+	}
 
 	// Finalizers
 	for _, fin := range heapScope.finalizers {
 		// scan object
-		s.findRef(newReferenceVariable(fin.p, "finalized", new(finalizePtrType), s.mem, nil), nil)
+		s.findRef(newReferenceVariable(fin.p, "finalized", new(finalizePtrType), s.mem, nil, nil), nil)
 		// scan finalizer
-		s.findRef(newReferenceVariable(fin.fn, "finalizer", new(godwarf.FuncType), s.mem, nil), nil)
+		s.findRef(newReferenceVariable(fin.fn, "finalizer", new(godwarf.FuncType), s.mem, nil, nil), nil)
 	}
 
 	for _, param := range s.finalMarks {

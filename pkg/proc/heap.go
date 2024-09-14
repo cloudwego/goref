@@ -19,6 +19,7 @@ import (
 	"go/constant"
 	"math"
 	"math/bits"
+	"sort"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/go-delve/delve/pkg/logflags"
@@ -56,22 +57,18 @@ func (sp *spanInfo) elemEnd(base Address) Address {
 }
 
 type segment struct {
-	start, end Address
-	visitMask  []uint64
+	gcMaskBitIterator
+	visitMask []uint64
 }
 
-func (s *segment) init(start, end Address) {
-	s.start, s.end = start, end
-	maskLen := (end - start) / 8 / 64
-	if (end-start)/8%64 != 0 {
-		maskLen += 1
-	}
-	s.visitMask = make([]uint64, maskLen)
+func (s *segment) init(start, end Address, ptrMask []uint64) {
+	s.gcMaskBitIterator = *newGCBitsIterator(start, end, start, ptrMask)
+	s.visitMask = make([]uint64, CeilDivide(int64((end-start)/8), 64))
 }
 
 func (s *segment) mark(addr Address) (success bool) {
-	if addr >= s.start && addr < s.end {
-		offset := addr.Sub(s.start)
+	if addr >= s.base && addr < s.end {
+		offset := addr.Sub(s.base)
 		if s.visitMask[offset/8/64]&(1<<(offset/8%64)) != 0 {
 			return false
 		} else {
@@ -100,9 +97,65 @@ func (ss segments) mark(addr Address) (success bool, seg *segment) {
 	return false, nil
 }
 
-// stack inherits segment.
+type framePointerMask struct {
+	gcMaskBitIterator
+	funcName string
+}
+
 type stack struct {
-	segment
+	start, end Address
+	visitMask  []uint64
+	frames     []framePointerMask
+}
+
+func (s *stack) init(start, end Address, frames []framePointerMask) {
+	s.start, s.end = start, end
+	s.visitMask = make([]uint64, CeilDivide(int64((end-start)/8), 64))
+	s.frames = frames
+}
+
+func (s *stack) mark(addr Address) (success bool) {
+	if addr >= s.start && addr < s.end {
+		offset := addr.Sub(s.start)
+		if s.visitMask[offset/8/64]&(1<<(offset/8%64)) != 0 {
+			return false
+		} else {
+			s.visitMask[offset/8/64] |= 1 << (offset / 8 % 64)
+			return true
+		}
+	}
+	return false
+}
+
+func (s *stack) resetGCMask(addr Address) error {
+	if s == nil {
+		return nil
+	}
+	if addr < s.start || addr >= s.end {
+		return errOutOfRange
+	}
+	idx := sort.Search(len(s.frames), func(i int) bool {
+		minAddr := s.frames[i].base
+		maxAddr := s.frames[i].end
+		return addr <= minAddr || (minAddr <= addr && addr < maxAddr)
+	})
+	if idx >= len(s.frames) {
+		return nil
+	}
+	base := s.frames[idx].base
+	end := s.frames[idx].end
+	if base <= addr && addr < end {
+		offset := addr.Sub(base)
+		s.frames[idx].mask[offset/8/64] &= ^(1 << (offset / 8 % 64))
+	}
+	return nil
+}
+
+type funcExtra struct {
+	closureStructType *godwarf.StructType // closure struct type only support go 1.23 and later
+
+	funcdata []Address
+	stackMap pcTab
 }
 
 // HeapScope contains the proc info for this round of scanning.
@@ -135,7 +188,8 @@ type HeapScope struct {
 
 	finalMarks []finalMarkParam
 
-	closureStructTypes map[*proc.Function]*godwarf.StructType
+	funcExtraMap  map[*proc.Function]funcExtra
+	textAddrCache *textCache
 }
 
 func (s *HeapScope) readHeap() error {
@@ -194,10 +248,7 @@ func (s *HeapScope) readAllSpans(allspans *region, spanInUse, kindSpecialFinaliz
 		if st.Uint8() != spanInUse {
 			continue
 		}
-		maskLen := spanSize / 8 / 64
-		if spanSize/8%64 != 0 {
-			maskLen += 1
-		}
+		maskLen := CeilDivide(spanSize/8, 64)
 		spi := &spanInfo{
 			base: base, elemSize: elemSize, spanSize: spanSize,
 			visitMask: make([]uint64, maskLen), ptrMask: make([]uint64, maskLen),
@@ -473,68 +524,6 @@ func (s *HeapScope) setHeapPtr(a Address) {
 	sp.ptrMask[offset/8/64] |= uint64(1) << (offset / 8 % 64)
 }
 
-type heapBits struct {
-	base Address   // heap base
-	addr Address   // iterator address
-	end  Address   // cannot reach end
-	sp   *spanInfo // span info
-}
-
-func newHeapBits(base, end Address, sp *spanInfo) *heapBits {
-	return &heapBits{base: base, addr: base, end: end, sp: sp}
-}
-
-// To avoid traversing fields/elements that escape the actual valid scope.
-// e.g. (*[1 << 16]scase)(unsafe.Pointer(cas0)) in runtime.selectgo.
-var errOutOfRange = errors.New("out of heap span range")
-
-// resetGCMask will reset ptrMask corresponding to the address,
-// which will never be marked again by the finalMark.
-func (hb *heapBits) resetGCMask(addr Address) error {
-	if hb == nil {
-		return nil
-	}
-	if addr < hb.base || addr >= hb.end {
-		return errOutOfRange
-	}
-	// TODO: check gc mask
-	offset := addr.Sub(hb.sp.base)
-	hb.sp.ptrMask[offset/8/64] &= ^(1 << (offset / 8 % 64))
-	return nil
-}
-
-// nextPtr returns next ptr address starts from 'addr', returns 0 if not found.
-// If ack == true, the 'addr' will automatically increment to the next
-// starting address to be searched.
-func (hb *heapBits) nextPtr(ack bool) Address {
-	if hb == nil {
-		return 0
-	}
-	startOffset, endOffset := hb.addr.Sub(hb.sp.base), hb.end.Sub(hb.sp.base)
-	if startOffset >= endOffset || startOffset < 0 || endOffset > hb.sp.spanSize {
-		return 0
-	}
-	for startOffset < endOffset {
-		ptrIdx := startOffset / 8 / 64
-		i := startOffset / 8 % 64
-		j := int64(bits.TrailingZeros64(hb.sp.ptrMask[ptrIdx] >> i))
-		if j == 64 {
-			// search the next ptr
-			startOffset = (ptrIdx + 1) * 64 * 8
-			continue
-		}
-		addr := hb.sp.base.Add(startOffset + j*8)
-		if addr >= hb.end {
-			return 0
-		}
-		if ack {
-			hb.addr = addr.Add(8)
-		}
-		return addr
-	}
-	return 0
-}
-
 func (s *HeapScope) spanOf(addr Address) *spanInfo {
 	l1, l2, idx := s.indexes(addr)
 	if l1 < uint(len(s.arenaInfo)) {
@@ -559,14 +548,41 @@ func (s *HeapScope) readModuleData() error {
 		return err
 	}
 	firstmoduledata := toRegion(tmp, s.bi)
+
+	_funcType, _ := findType(s.bi, "runtime._func")
 	for md := firstmoduledata; md.a != 0; md = md.Field("next").Deref() {
-		var data, bss segment
-		data.init(Address(md.Field("data").Uintptr()), Address(md.Field("edata").Uintptr()))
-		bss.init(Address(md.Field("bss").Uintptr()), Address(md.Field("ebss").Uintptr()))
-		s.data = append(s.data, &data)
-		s.bss = append(s.bss, &bss)
+		if data := s.parseSegment("data", md); data != nil {
+			s.data = append(s.data, data)
+		}
+		if bss := s.parseSegment("bss", md); bss != nil {
+			s.bss = append(s.bss, bss)
+		}
+		s.readFuncTab(md, _funcType)
 	}
 	return nil
+}
+
+func (s *HeapScope) parseSegment(name string, md *region) *segment {
+	var seg segment
+	minAddr := Address(md.Field(name).Uintptr())
+	if minAddr == 0 {
+		return nil
+	}
+	maxAddr := Address(md.Field("e" + name).Uintptr())
+	gcmask := md.Field("gc" + name + "mask").Field("bytedata").Address()
+	ptrNum := int64((maxAddr - minAddr) / 8)
+	ptrMask := make([]uint64, CeilDivide(ptrNum, 64))
+	data := make([]byte, int(ptrNum/8))
+	_, err := s.mem.ReadMemory(data, uint64(gcmask))
+	if err != nil {
+		logflags.DebuggerLogger().Errorf("read gc data mask error: %v", err)
+	}
+	for i, mask := range data {
+		// convert to 64-bit mask
+		ptrMask[i/8] |= uint64(mask) << (8 * (i % 8))
+	}
+	seg.init(minAddr, maxAddr, ptrMask)
+	return &seg
 }
 
 type finalizer struct {
