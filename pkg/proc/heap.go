@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/bits"
 
+	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/go-delve/delve/pkg/logflags"
 	"github.com/go-delve/delve/pkg/proc"
 )
@@ -133,6 +134,8 @@ type HeapScope struct {
 	scope *proc.EvalScope
 
 	finalMarks []finalMarkParam
+
+	closureStructTypes map[*proc.Function]*godwarf.StructType
 }
 
 func (s *HeapScope) readHeap() error {

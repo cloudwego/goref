@@ -43,7 +43,7 @@ successfully output to `grf.out`
 
 ## Go Version Constraints
 
-- Executable file: go1.17 ~ go1.22.
+- Executable file: go1.17 ~ go1.23.
 - Compile goref tool: >= go1.21.
 
 

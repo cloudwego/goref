@@ -17,7 +17,6 @@ package proc
 import (
 	"debug/dwarf"
 	"unsafe"
-	_ "unsafe"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/go-delve/delve/pkg/proc"
@@ -67,26 +66,6 @@ func getFunctionOffset(f *proc.Function) (offset dwarf.Offset) {
 	return *offsetField.Get(f).(*dwarf.Offset)
 }
 
-/*
-type functionExtra struct {
-	// closureStructType is the cached struct type for closures for this function
-	closureStructType *godwarf.StructType
-
-	// rangeParent is set when this function is a range-over-func body closure
-	// and points to the function that the closure was generated from.
-	rangeParent *Function
-	// rangeBodies is the list of range-over-func body closures for this
-	// function. Only one between rangeParent and rangeBodies should be set at
-	// any given time.
-	rangeBodies []*Function
-}
-
-// Not support closure type before go1.23. TODO: support go1.23
-//
-//go:linkname extra github.com/go-delve/delve/pkg/proc.(*Function).extra
-func extra(f *Function, bi *BinaryInfo) (e *functionExtra)
-*/
-
 //go:linkname image github.com/go-delve/delve/pkg/proc.(*EvalScope).image
 func image(scope *proc.EvalScope) *proc.Image
 
@@ -96,8 +75,11 @@ func getDwarfTree(image *proc.Image, off dwarf.Offset) (*godwarf.Tree, error)
 //go:linkname findType github.com/go-delve/delve/pkg/proc.(*BinaryInfo).findType
 func findType(bi *proc.BinaryInfo, name string) (godwarf.Type, error)
 
-//go:linkname rangeParentName github.com/go-delve/delve/pkg/proc.(*Function).rangeParentName
-func rangeParentName(fn *proc.Function) string
+//go:linkname funcToImage github.com/go-delve/delve/pkg/proc.(*BinaryInfo).funcToImage
+func funcToImage(bi *proc.BinaryInfo, fn *proc.Function) *proc.Image
+
+//go:linkname rangeFuncStackTrace github.com/go-delve/delve/pkg/proc.rangeFuncStackTrace
+func rangeFuncStackTrace(tgt *proc.Target, g *proc.G) ([]proc.Stackframe, error)
 
 //go:linkname readVarEntry github.com/go-delve/delve/pkg/proc.readVarEntry
 func readVarEntry(entry *godwarf.Tree, image *proc.Image) (name string, typ godwarf.Type, err error)
