@@ -58,8 +58,7 @@ type ReferenceVariable struct {
 	mem      proc.MemoryReadWriter
 
 	// heap bits for this object
-	// hb.base equals to Addr, hb.end equals to min(Addr.Add(RealType.Size), heapBase.Add(elemSize))
-	hb *heapBits
+	hb *gcMaskBitIterator
 
 	// node size
 	size int64
@@ -67,11 +66,11 @@ type ReferenceVariable struct {
 	count int64
 }
 
-func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *heapBits) *ReferenceVariable {
+func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator) *ReferenceVariable {
 	return &ReferenceVariable{Addr: addr, Name: name, RealType: typ, mem: mem, hb: hb}
 }
 
-func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *heapBits, size, count int64) *ReferenceVariable {
+func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator, size, count int64) *ReferenceVariable {
 	rv := newReferenceVariable(addr, name, typ, mem, hb)
 	rv.size, rv.count = size, count
 	return rv
@@ -368,7 +367,6 @@ func (it *mapIterator) value() *ReferenceVariable {
 func (it *mapIterator) kv(v *ReferenceVariable) *ReferenceVariable {
 	v.RealType = resolveTypedef(v.RealType.(*godwarf.ArrayType).Type)
 	v.Addr = v.Addr.Add(v.RealType.Size() * (it.idx - 1))
-	// fixme(@jayantxie): use stackmap to get gc bits.
 	if v.hb != nil {
 		// limit heap bits to a single value
 		base, end := v.hb.base, v.hb.end
@@ -381,7 +379,7 @@ func (it *mapIterator) kv(v *ReferenceVariable) *ReferenceVariable {
 		if base >= end {
 			return nil
 		}
-		v.hb = newHeapBits(base, end, v.hb.sp)
+		v.hb = newGCBitsIterator(base, end, v.hb.maskBase, v.hb.mask)
 	}
 	return v
 }
@@ -590,4 +588,12 @@ func resolveTypedef(typ godwarf.Type) godwarf.Type {
 			return typ
 		}
 	}
+}
+
+func CeilDivide(n, d int64) int64 {
+	r := n / d
+	if n%d > 0 {
+		r++
+	}
+	return r
 }

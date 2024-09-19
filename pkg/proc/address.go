@@ -26,3 +26,9 @@ func (a Address) Sub(b Address) int64 {
 func (a Address) Add(x int64) Address {
 	return a + Address(x)
 }
+
+// Align rounds a up to a multiple of x.
+// x must be a power of 2.
+func (a Address) Align(x int64) Address {
+	return (a + Address(x) - 1) & ^(Address(x) - 1)
+}

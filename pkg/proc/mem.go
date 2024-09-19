@@ -19,7 +19,10 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
-const cacheEnabled = true
+const (
+	cacheEnabled   = true
+	cacheThreshold = 1024 * 1024 * 1024 // 1GB
+)
 
 type memCache struct {
 	loaded    bool
@@ -66,6 +69,9 @@ func cacheMemory(mem proc.MemoryReadWriter, addr uint64, size int) proc.MemoryRe
 	}
 	if addr+uint64(size) < addr {
 		// overflow
+		return mem
+	}
+	if size > cacheThreshold {
 		return mem
 	}
 	switch cacheMem := mem.(type) {

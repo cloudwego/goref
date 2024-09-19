@@ -17,14 +17,11 @@ package proc
 import "testing"
 
 func TestHeapBits(t *testing.T) {
-	hb := newHeapBits(0, 1024, &spanInfo{
-		spanSize: 1024,
-		ptrMask:  make([]uint64, 2),
-	})
+	hb := newGCBitsIterator(0, 1024, 0, make([]uint64, 2))
 	// set 16, 72, 208, 504, 928 as pointer
 	offsets := []int64{16, 72, 208, 504, 928}
 	for _, offset := range offsets {
-		hb.sp.ptrMask[offset/8/64] |= 1 << (offset / 8 % 64)
+		hb.mask[offset/8/64] |= 1 << (offset / 8 % 64)
 	}
 	for i, offset := range offsets {
 		var nextOffset int64

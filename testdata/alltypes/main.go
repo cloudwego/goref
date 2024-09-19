@@ -43,7 +43,7 @@ var (
 )
 
 //go:noinline
-func escape(req *Request, str interface{}, reqI interface{}, reqE ReqE, bbbb *[2112313131]Request) {
+func escape(req *Request, str, reqI interface{}, reqE ReqE, bbbb *[2112313131]Request) {
 	_, _ = json.Marshal(req)
 	_, _ = json.Marshal(str)
 	_, _ = json.Marshal(reqI)

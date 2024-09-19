@@ -49,7 +49,7 @@ successfully output to `grf.out`
 
 ## Docs
 
-[Principle](docs/principle.md) | [实现原理](docs/principle_cn.md)
+[How it Works](docs/principle.md) | [实现原理](docs/principle_cn.md)
 
 ## Credit
 
