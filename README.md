@@ -25,13 +25,14 @@ $ go tool pprof -http=:5079 ./grf.out
 
 The opened HTML page displays the reference distribution of the heap memory. You can choose to view the "inuse space" or "inuse objects".
 
-<img width="1919" alt="image" src="https://github.com/user-attachments/assets/95afe64b-0aab-4de6-93af-b5e671f43b0c">
+For example, the following picture is a Heap Profile of pprof. It can be seen that the objects are mainly allocated by `FastRead` function, which is Kitex's deserialization code. This flame graph is not very helpful for troubleshooting because memory allocation for decoding and constructing data is normal.
 
-> DWARF parsing of closure type was not supported before Go 1.23, so sub objects of `wpool.task` cannot be displayed.
+![image](https://github.com/user-attachments/assets/799c1b9a-fcf0-4b35-ab15-03a2bf3a919e)
 
-View flame graph of inuse objects:
+However, by using the goref tool, the following results can be seen: `mockCache` holding onto RPC's Response causing memory not to be released, making the problem clear at a glance.
 
-<img width="1917" alt="image" src="https://github.com/user-attachments/assets/86e76318-7eea-4180-96e3-7a184e65252b">
+![image](https://github.com/user-attachments/assets/1c3d5d29-953d-4364-84b9-69ae35f51152)
+
 
 
 It also supports analyzing core files, e.g.
