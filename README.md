@@ -5,7 +5,7 @@
 
 Goref is a Go heap object reference analysis tool based on delve.
 
-It can display the space and object count distribution of Go memory references, which is helpful for efficiently locating memory leak issues or viewing persistent heap objects to optimize GC overhead.
+It can display the space and object count distribution of Go memory references, which is helpful for efficiently locating memory leak issues or viewing persistent heap objects to optimize the garbage collector (GC) overhead.
 
 ## Installation
 
@@ -25,13 +25,18 @@ $ go tool pprof -http=:5079 ./grf.out
 
 The opened HTML page displays the reference distribution of the heap memory. You can choose to view the "inuse space" or "inuse objects".
 
-For example, the following picture is a Heap Profile of pprof. It can be seen that the objects are mainly allocated by `FastRead` function, which is Kitex's deserialization code. This flame graph is not very helpful for troubleshooting because memory allocation for decoding and constructing data is normal.
+For example, the heap profile sampled from a Kitex RPC service is shown below, which reflects the call stack distribution of object creation. The largest proportion, FastRead, is the function for object deserialization.
 
-![image](https://github.com/user-attachments/assets/799c1b9a-fcf0-4b35-ab15-03a2bf3a919e)
+![image](https://github.com/user-attachments/assets/495d0884-332a-4570-b41b-3019e4d9b3c1)
 
-However, by using the goref tool, the following results can be seen: `mockCache` holding onto RPC's Response causing memory not to be released, making the problem clear at a glance.
 
-![image](https://github.com/user-attachments/assets/1c3d5d29-953d-4364-84b9-69ae35f51152)
+
+By using the goref tool, you can see the memory reference distribution of heap objects reachable by GC, thereby quickly pinpointing the actual code locations holding references.
+
+![image](https://github.com/user-attachments/assets/9f547dc8-6b40-439b-9aee-6c5de8dfdee5)
+
+
+
 
 
 
