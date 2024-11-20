@@ -507,7 +507,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 			threadID = gr.Thread.ThreadID()
 		}
 		sf, _ := proc.GoroutineStacktrace(t, gr, 1024, 0)
-		s.g.init(Address(lo), Address(hi), s.stackPtrMask(sf))
+		s.g.init(Address(lo), Address(hi), s.stackPtrMask(Address(lo), Address(hi), sf))
 		if len(sf) > 0 {
 			for i := range sf {
 				ms := myEvalScope{EvalScope: *proc.FrameToScope(t, t.Memory(), gr, threadID, sf[i:]...)}
