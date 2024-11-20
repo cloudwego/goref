@@ -555,7 +555,7 @@ func (s *HeapScope) parseSegment(name string, md *region) *segment {
 // which is extremely complex to handle and is not conducive to the maintenance of the project.
 // Therefore, Goref adopts a conservative scanning scheme.
 // NOTE: This may lead to scanning an additional portion of memory.
-func (s *HeapScope) stackPtrMask(frames []proc.Stackframe) []*framePointerMask {
+func (s *HeapScope) stackPtrMask(start, end Address, frames []proc.Stackframe) []*framePointerMask {
 	var frPtrMasks []*framePointerMask
 	for i := range frames {
 		pc := frames[i].Regs.PC()
@@ -565,6 +565,10 @@ func (s *HeapScope) stackPtrMask(frames []proc.Stackframe) []*framePointerMask {
 		}
 		sp := Address(frames[i].Regs.SP())
 		fp := Address(frames[i].Regs.FrameBase)
+		if fp <= sp || fp > end || sp < start {
+			// invalid frame pointer
+			continue
+		}
 		ptrMask := make([]uint64, CeilDivide(fp.Sub(sp)/8, 64))
 		for i := range ptrMask {
 			ptrMask[i] = ^uint64(0)
