@@ -48,30 +48,27 @@ func (scope *myEvalScope) Locals(t *proc.Target, g *proc.G, threadID int, mds []
 	if err != nil {
 		return nil, err
 	}
-	/*
-		if rpn := rangeParentName(scope.Fn.Name); rpn == "" {
-			return vars, nil
-		}
 
-		rangeFrames, err := rangeFuncStackTrace(t, g)
-		if err != nil {
-			return vars, nil
-		}
+	if rpn := rangeParentName(scope.Fn.Name); rpn == "" {
+		return vars, nil
+	}
+
+	rangeFrames, err := rangeFuncStackTrace(t, g)
+	if err != nil {
+		return vars, nil
+	}
+	if len(rangeFrames) > 0 {
 		rangeFrames = rangeFrames[2:] // skip the first frame and its return frame
-		enclosingRangeScopes := make([]*myEvalScope, len(rangeFrames)/2)
+	}
 
-		for i, scope2 := range enclosingRangeScopes {
-			if scope2 == nil {
-				scope2 := &myEvalScope{EvalScope: *proc.FrameToScope(t, t.Memory(), g, threadID, rangeFrames[2*i:]...)}
-				enclosingRangeScopes[i] = scope2
-			}
-			vars2, err := scope2.simpleLocals(mds)
-			if err != nil {
-				continue
-			}
-			vars = append(vars, vars2...)
+	for i := 0; i < len(rangeFrames)/2; i++ {
+		scope2 := &myEvalScope{EvalScope: *proc.FrameToScope(t, t.Memory(), g, threadID, rangeFrames[2*i:]...)}
+		vars2, err := scope2.simpleLocals(mds)
+		if err != nil {
+			continue
 		}
-	*/
+		vars = append(vars, vars2...)
+	}
 	return vars, nil
 }
 

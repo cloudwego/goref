@@ -2,10 +2,8 @@ module github.com/cloudwego/goref
 
 go 1.21
 
-toolchain go1.22.2
-
 require (
-	github.com/go-delve/delve v1.23.0
+	github.com/go-delve/delve v1.23.1-0.20240918211707-059f149433c1
 	github.com/modern-go/reflect2 v1.0.2
 	github.com/spf13/cobra v1.8.1
 )
