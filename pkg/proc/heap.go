@@ -596,7 +596,7 @@ func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, kindSpecialFinalizer u
 			continue
 		}
 		var fin finalizer
-		p := spi.base.Add(int64(special.Field("offset").Uint16()) / spi.elemSize * spi.elemSize)
+		p := spi.base.Add(int64(special.Field("offset").Uintptr()) / spi.elemSize * spi.elemSize)
 		fin.p = p
 		spf := *special
 		spf.typ = spty
