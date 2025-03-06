@@ -17,36 +17,16 @@ package proc
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
-	"github.com/go-delve/delve/pkg/goversion"
 	"github.com/go-delve/delve/pkg/logflags"
 	"github.com/go-delve/delve/pkg/proc"
 )
 
-const (
-	// hashTophashEmptyZero is used by map reading code, indicates an empty cell
-	hashTophashEmptyZero = 0 // +rtype emptyRest
-	// hashTophashEmptyOne is used by map reading code, indicates an empty cell in Go 1.12 and later
-	hashTophashEmptyOne = 1 // +rtype emptyOne
-	// hashMinTopHashGo111 used by map reading code, indicates minimum value of tophash that isn't empty or evacuated, in Go1.11
-	hashMinTopHashGo111 = 4 // +rtype minTopHash
-	// hashMinTopHashGo112 is used by map reading code, indicates minimum value of tophash that isn't empty or evacuated, in Go1.12
-	hashMinTopHashGo112 = 5 // +rtype minTopHash
-)
-
-// The kind field in runtime._type is a reflect.Kind value plus
-// some extra flags defined here.
-// See equivalent declaration in $GOROOT/src/reflect/type.go
-const (
-	kindDirectIface = 1 << 5 // +rtype kindDirectIface|internal/abi.KindDirectIface
-	kindGCProg      = 1 << 6 // +rtype kindGCProg|internal/abi.KindGCProg
-	kindNoPointers  = 1 << 7
-	kindMask        = (1 << 5) - 1 // +rtype kindMask|internal/abi.KindMask
-)
+var errVariableNotFound = fmt.Errorf("variable not found")
 
 // ReferenceVariable represents a variable. It contains the address, name,
 // type and other information parsed from both the Dwarf information
@@ -76,6 +56,47 @@ func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf
 	return rv
 }
 
+func (v *ReferenceVariable) dereference(s *ObjRefScope) *ReferenceVariable {
+	switch t := v.RealType.(type) {
+	case *godwarf.PtrType:
+		ptr, err := v.readPointer(v.Addr)
+		if err != nil {
+			return nil
+		}
+		nv := s.findObject(Address(ptr), resolveTypedef(t.Type), proc.DereferenceMemory(v.mem))
+		return nv
+	default:
+		return nil
+	}
+}
+
+func (v *ReferenceVariable) toField(field *godwarf.StructField) *ReferenceVariable {
+	fieldAddr := v.Addr.Add(field.ByteOffset)
+	return newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), v.mem, v.hb)
+}
+
+func (v *ReferenceVariable) arrayAccess(idx int64) *ReferenceVariable {
+	at, ok := v.RealType.(*godwarf.ArrayType)
+	if !ok {
+		return nil
+	}
+	elemAddr := v.Addr.Add(idx * at.Type.Size())
+	// collapse 10+ elements by default
+	name := "[10+]"
+	if idx < 10 {
+		name = "[" + strconv.Itoa(int(idx)) + "]"
+	}
+	return newReferenceVariable(elemAddr, name+". ("+at.Type.String()+")", at.Type, v.mem, v.hb)
+}
+
+func (v *ReferenceVariable) asInt() (int64, error) {
+	return readIntRaw(v.mem, uint64(v.Addr), 8)
+}
+
+func (v *ReferenceVariable) asUint() (uint64, error) {
+	return readUintRaw(v.mem, uint64(v.Addr), 8)
+}
+
 func (v *ReferenceVariable) readPointer(addr Address) (uint64, error) {
 	if err := v.hb.resetGCMask(addr); err != nil {
 		return 0, err
@@ -90,316 +111,6 @@ func (v *ReferenceVariable) readUint64(addr Address) (uint64, error) {
 		}
 	}
 	return readUintRaw(v.mem, uint64(addr), 8)
-}
-
-type mapIterator struct {
-	bi         *proc.BinaryInfo
-	numbuckets uint64
-	oldmask    uint64
-	buckets    *ReferenceVariable
-	oldbuckets *ReferenceVariable
-	b          *ReferenceVariable
-	bidx       uint64
-
-	tophashes *ReferenceVariable
-	keys      *ReferenceVariable
-	values    *ReferenceVariable
-	overflow  *ReferenceVariable
-
-	maxNumBuckets uint64 // maximum number of buckets to scan
-
-	idx int64
-
-	hashTophashEmptyOne uint64 // Go 1.12 and later has two sentinel tophash values for an empty cell, this is the second one (the first one hashTophashEmptyZero, the same as Go 1.11 and earlier)
-	hashMinTopHash      uint64 // minimum value of tophash for a cell that isn't either evacuated or empty
-
-	// for record ref mem
-	objects     []*ReferenceVariable
-	size, count int64
-}
-
-// Code derived from go/src/runtime/hashmap.go
-func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable) (it *mapIterator, err error) {
-	if hmap.Addr == 0 {
-		err = errors.New("empty hmap addr")
-		return
-	}
-	maptype, ok := hmap.RealType.(*godwarf.StructType)
-	if !ok {
-		err = errors.New("wrong real type for map")
-		return
-	}
-
-	it = &mapIterator{bidx: 0, b: nil, idx: 0, bi: s.bi, size: hmap.size, count: hmap.count}
-
-	for _, f := range maptype.Field {
-		switch f.Name {
-		// case "count": // +rtype -fieldof hmap int
-		//	v.Len, err = readIntRaw(mem, uint64(addr.Add(f.ByteOffset)), ptrSize)
-		case "B": // +rtype -fieldof hmap uint8
-			var b uint64
-			b, err = readUintRaw(hmap.mem, uint64(hmap.Addr.Add(f.ByteOffset)), 1)
-			if err != nil {
-				return
-			}
-			it.numbuckets = 1 << b
-			it.oldmask = (1 << (b - 1)) - 1
-		case "buckets": // +rtype -fieldof hmap unsafe.Pointer
-			var ptr uint64
-			ptr, err = hmap.readPointer(hmap.Addr.Add(f.ByteOffset))
-			if err != nil {
-				return
-			}
-			buckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem))
-			if buckets != nil {
-				it.buckets = buckets
-				it.size += buckets.size
-				it.count += buckets.count
-				it.objects = append(it.objects, buckets)
-			}
-		case "oldbuckets": // +rtype -fieldof hmap unsafe.Pointer
-			var ptr uint64
-			ptr, err = hmap.readPointer(hmap.Addr.Add(f.ByteOffset))
-			if err != nil {
-				return
-			}
-			oldbuckets := s.findObject(Address(ptr), resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(hmap.mem))
-			if oldbuckets != nil {
-				it.oldbuckets = oldbuckets
-				it.size += oldbuckets.size
-				it.count += oldbuckets.count
-				it.objects = append(it.objects, oldbuckets)
-			}
-		}
-	}
-
-	if it.buckets != nil {
-		if _, ok = it.buckets.RealType.(*godwarf.StructType); !ok {
-			err = errMapBucketsNotStruct
-			return
-		}
-	}
-	if it.oldbuckets != nil {
-		if _, ok = it.oldbuckets.RealType.(*godwarf.StructType); !ok {
-			err = errMapBucketsNotStruct
-			return
-		}
-	}
-
-	it.hashTophashEmptyOne = hashTophashEmptyZero
-	it.hashMinTopHash = hashMinTopHashGo111
-	if producer := s.bi.Producer(); producer != "" && goversion.ProducerAfterOrEqual(producer, 1, 12) {
-		it.hashTophashEmptyOne = hashTophashEmptyOne
-		it.hashMinTopHash = hashMinTopHashGo112
-	}
-	return
-}
-
-var (
-	errMapBucketContentsNotArray        = errors.New("malformed map type: keys, values or tophash of a bucket is not an array")
-	errMapBucketContentsInconsistentLen = errors.New("malformed map type: inconsistent array length in bucket")
-	errMapBucketsNotStruct              = errors.New("malformed map type: buckets, oldbuckets or overflow field not a struct")
-)
-
-func (s *ObjRefScope) nextBucket(it *mapIterator) bool {
-	if it.overflow != nil && it.overflow.Addr > 0 {
-		it.b = it.overflow
-	} else {
-		it.b = nil
-
-		if it.maxNumBuckets > 0 && it.bidx >= it.maxNumBuckets {
-			return false
-		}
-
-		for it.bidx < it.numbuckets {
-			if it.buckets == nil {
-				break
-			}
-			it.b = it.buckets.clone()
-			it.b.Addr = it.b.Addr.Add(it.buckets.RealType.Size() * int64(it.bidx))
-
-			if it.oldbuckets == nil {
-				break
-			}
-
-			// if oldbuckets is not nil we are iterating through a map that is in
-			// the middle of a grow.
-			// if the bucket we are looking at hasn't been filled in we iterate
-			// instead through its corresponding "oldbucket" (i.e. the bucket the
-			// elements of this bucket are coming from) but only if this is the first
-			// of the two buckets being created from the same oldbucket (otherwise we
-			// would print some keys twice)
-
-			oldbidx := it.bidx & it.oldmask
-			oldb := it.oldbuckets.clone()
-			oldb.Addr = oldb.Addr.Add(it.oldbuckets.RealType.Size() * int64(oldbidx))
-
-			if it.mapEvacuated(oldb) {
-				break
-			}
-
-			if oldbidx == it.bidx {
-				it.b = oldb
-				break
-			}
-
-			// oldbucket origin for current bucket has not been evacuated but we have already
-			// iterated over it so we should just skip it
-			it.b = nil
-			it.bidx++
-		}
-
-		if it.b == nil {
-			return false
-		}
-		it.bidx++
-	}
-
-	if it.b.Addr <= 0 {
-		return false
-	}
-
-	it.tophashes = nil
-	it.keys = nil
-	it.values = nil
-	it.overflow = nil
-
-	for _, f := range it.b.RealType.(*godwarf.StructType).Field {
-		field := newReferenceVariable(it.b.Addr.Add(f.ByteOffset), f.Name, resolveTypedef(f.Type), it.b.mem, it.b.hb)
-		switch f.Name {
-		case "tophash": // +rtype -fieldof bmap [8]uint8
-			it.tophashes = field
-		case "keys":
-			it.keys = field
-		case "values":
-			it.values = field
-		case "overflow":
-			ptr, err := it.b.readPointer(field.Addr)
-			if err != nil {
-				// logflags.DebuggerLogger().Errorf("could not load overflow variable: %v", err)
-				return false
-			}
-			if it.overflow = s.findObject(Address(ptr), field.RealType.(*godwarf.PtrType).Type, proc.DereferenceMemory(it.b.mem)); it.overflow != nil {
-				it.count += it.overflow.count
-				it.size += it.overflow.size
-				it.objects = append(it.objects, it.overflow)
-			}
-		}
-	}
-
-	// sanity checks
-	if it.tophashes == nil || it.keys == nil || it.values == nil {
-		logflags.DebuggerLogger().Errorf("malformed map type")
-		return false
-	}
-
-	tophashesType, ok1 := it.tophashes.RealType.(*godwarf.ArrayType)
-	keysType, ok2 := it.keys.RealType.(*godwarf.ArrayType)
-	valuesType, ok3 := it.values.RealType.(*godwarf.ArrayType)
-	if !ok1 || !ok2 || !ok3 {
-		logflags.DebuggerLogger().Errorf("%v", errMapBucketContentsNotArray)
-		return false
-	}
-
-	if tophashesType.Count != keysType.Count {
-		logflags.DebuggerLogger().Errorf("%v", errMapBucketContentsInconsistentLen)
-		return false
-	}
-
-	if valuesType.Type.Size() > 0 && tophashesType.Count != valuesType.Count {
-		// if the type of the value is zero-sized (i.e. struct{}) then the values
-		// array's length is zero.
-		logflags.DebuggerLogger().Errorf("%v", errMapBucketContentsInconsistentLen)
-		return false
-	}
-
-	if it.overflow != nil {
-		if _, ok := it.overflow.RealType.(*godwarf.StructType); !ok {
-			logflags.DebuggerLogger().Errorf("%v", errMapBucketsNotStruct)
-			return false
-		}
-	}
-
-	return true
-}
-
-func (s *ObjRefScope) next(it *mapIterator) bool {
-	for {
-		if it.b == nil {
-			r := s.nextBucket(it)
-			if !r {
-				return false
-			}
-			it.idx = 0
-		}
-		if tophashesType, _ := it.tophashes.RealType.(*godwarf.ArrayType); it.idx >= tophashesType.Count {
-			r := s.nextBucket(it)
-			if !r {
-				return false
-			}
-			it.idx = 0
-		}
-		tophash := it.tophashes.clone()
-		tophash.RealType = tophash.RealType.(*godwarf.ArrayType).Type
-		tophash.Name = fmt.Sprintf("[%d]", int(it.idx))
-		tophash.Addr = tophash.Addr.Add(tophash.RealType.Size() * it.idx)
-
-		h, err := readUintRaw(tophash.mem, uint64(tophash.Addr), 1)
-		if err != nil {
-			logflags.DebuggerLogger().Errorf("unreadable tophash: %v", err)
-			return false
-		}
-		it.idx++
-		if h != hashTophashEmptyZero && h != it.hashTophashEmptyOne {
-			return true
-		}
-	}
-}
-
-func (it *mapIterator) key() *ReferenceVariable {
-	return it.kv(it.keys.clone())
-}
-
-func (it *mapIterator) value() *ReferenceVariable {
-	return it.kv(it.values.clone())
-}
-
-func (it *mapIterator) kv(v *ReferenceVariable) *ReferenceVariable {
-	v.RealType = resolveTypedef(v.RealType.(*godwarf.ArrayType).Type)
-	v.Addr = v.Addr.Add(v.RealType.Size() * (it.idx - 1))
-	if v.hb != nil {
-		// limit heap bits to a single value
-		base, end := v.hb.base, v.hb.end
-		if base < v.Addr {
-			base = v.Addr
-		}
-		if end > v.Addr.Add(v.RealType.Size()) {
-			end = v.Addr.Add(v.RealType.Size())
-		}
-		if base >= end {
-			return nil
-		}
-		v.hb = newGCBitsIterator(base, end, v.hb.maskBase, v.hb.mask)
-	}
-	return v
-}
-
-func (it *mapIterator) mapEvacuated(b *ReferenceVariable) bool {
-	if b.Addr == 0 {
-		return true
-	}
-	for _, f := range b.RealType.(*godwarf.StructType).Field {
-		if f.Name != "tophash" {
-			continue
-		}
-		tophash0, err := readUintRaw(b.mem, uint64(b.Addr.Add(f.ByteOffset)), 1)
-		if err != nil {
-			return true
-		}
-		// TODO: this needs to be > hashTophashEmptyOne for go >= 1.12
-		return tophash0 > it.hashTophashEmptyOne && tophash0 < it.hashMinTopHash
-	}
-	return true
 }
 
 func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable, data *ReferenceVariable) {

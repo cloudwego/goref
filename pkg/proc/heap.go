@@ -161,6 +161,9 @@ type HeapScope struct {
 	finalMarks []finalMarkParam
 
 	funcExtraMap map[*proc.Function]funcExtra
+
+	// for go1.24+, offset field of runtime.special type is uintptr
+	specialOffsetUintptrType uint8 // 0: not sure, 1: uintptr, 2: uint16
 }
 
 func (s *HeapScope) readHeap() error {
@@ -596,7 +599,19 @@ func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, kindSpecialFinalizer u
 			continue
 		}
 		var fin finalizer
-		p := spi.base.Add(int64(special.Field("offset").Uintptr()) / spi.elemSize * spi.elemSize)
+		if s.specialOffsetUintptrType == 0 {
+			if _, ok := special.Field("offset").typ.(*godwarf.UintType); ok {
+				s.specialOffsetUintptrType = 1
+			} else {
+				s.specialOffsetUintptrType = 2
+			}
+		}
+		var p Address
+		if s.specialOffsetUintptrType == 1 {
+			p = spi.base.Add(int64(special.Field("offset").Uintptr()) / spi.elemSize * spi.elemSize)
+		} else {
+			p = spi.base.Add(int64(special.Field("offset").Uint16()) / spi.elemSize * spi.elemSize)
+		}
 		fin.p = p
 		spf := *special
 		spf.typ = spty
