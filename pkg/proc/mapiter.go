@@ -113,18 +113,17 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable, keyType, elemType g
 		return itswiss, nil
 	}
 
-	if it.buckets == nil || it.oldbuckets == nil {
-		err = errMapBucketsNotStruct
-		return
+	if it.buckets != nil {
+		if _, ok = it.buckets.RealType.(*godwarf.StructType); !ok {
+			err = errMapBucketsNotStruct
+			return
+		}
 	}
-
-	if _, ok = it.buckets.RealType.(*godwarf.StructType); !ok {
-		err = errMapBucketsNotStruct
-		return
-	}
-	if _, ok = it.oldbuckets.RealType.(*godwarf.StructType); !ok {
-		err = errMapBucketsNotStruct
-		return
+	if it.oldbuckets != nil {
+		if _, ok = it.oldbuckets.RealType.(*godwarf.StructType); !ok {
+			err = errMapBucketsNotStruct
+			return
+		}
 	}
 
 	it.hashTophashEmptyOne = hashTophashEmptyZero
