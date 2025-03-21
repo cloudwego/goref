@@ -553,9 +553,9 @@ func ObjectReference(t *proc.Target, filename string) error {
 	// Finalizers
 	for _, fin := range heapScope.finalizers {
 		// scan object
-		s.findRef(newReferenceVariable(fin.p, "finalized", new(finalizePtrType), s.mem, nil), nil)
+		s.findRef(newReferenceVariable(fin.p, "runtime.SetFinalizer", new(finalizePtrType), s.mem, nil), nil)
 		// scan finalizer
-		s.findRef(newReferenceVariable(fin.fn, "finalizer", new(godwarf.FuncType), s.mem, nil), nil)
+		s.findRef(newReferenceVariable(fin.fn, "runtime.SetFinalizer", new(godwarf.FuncType), s.mem, nil), nil)
 	}
 
 	for _, param := range s.finalMarks {

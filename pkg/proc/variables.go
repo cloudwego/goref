@@ -86,7 +86,7 @@ func (v *ReferenceVariable) arrayAccess(idx int64) *ReferenceVariable {
 	if idx < 10 {
 		name = "[" + strconv.Itoa(int(idx)) + "]"
 	}
-	return newReferenceVariable(elemAddr, name+". ("+at.Type.String()+")", at.Type, v.mem, v.hb)
+	return newReferenceVariable(elemAddr, name+". ("+at.Type.String()+")", resolveTypedef(at.Type), v.mem, v.hb)
 }
 
 func (v *ReferenceVariable) asInt() (int64, error) {
