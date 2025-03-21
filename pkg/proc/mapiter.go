@@ -63,6 +63,7 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable, keyType, elemType g
 		// case "count": // +rtype -fieldof hmap int
 		//	v.Len, err = readIntRaw(mem, uint64(addr.Add(f.ByteOffset)), ptrSize)
 		case "B": // +rtype -fieldof hmap uint8
+			mi = it
 			var b uint64
 			b, err = readUintRaw(hmap.mem, uint64(hmap.Addr.Add(f.ByteOffset)), 1)
 			if err != nil {
@@ -71,6 +72,7 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable, keyType, elemType g
 			it.numbuckets = 1 << b
 			it.oldmask = (1 << (b - 1)) - 1
 		case "buckets": // +rtype -fieldof hmap unsafe.Pointer
+			mi = it
 			field := hmap.toField(f)
 			buckets := field.dereference(s)
 			if buckets != nil {
@@ -80,6 +82,7 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable, keyType, elemType g
 				it.objects = append(it.objects, buckets)
 			}
 		case "oldbuckets": // +rtype -fieldof hmap unsafe.Pointer
+			mi = it
 			field := hmap.toField(f)
 			oldbuckets := field.dereference(s)
 			if oldbuckets != nil {
@@ -91,8 +94,10 @@ func (s *ObjRefScope) toMapIterator(hmap *ReferenceVariable, keyType, elemType g
 
 		// swisstable map fields
 		case "dirPtr":
+			mi = itswiss
 			itswiss.dirPtr = newReferenceVariable(hmap.Addr.Add(f.ByteOffset), "", f.Type, hmap.mem, hmap.hb)
 		case "dirLen":
+			mi = itswiss
 			itswiss.dirLen, err = readIntRaw(hmap.mem, uint64(hmap.Addr.Add(f.ByteOffset)), 8)
 			if err != nil {
 				return

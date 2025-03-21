@@ -600,7 +600,7 @@ func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, kindSpecialFinalizer u
 		}
 		var fin finalizer
 		if s.specialOffsetUintptrType == 0 {
-			if _, ok := special.Field("offset").typ.(*godwarf.UintType); ok {
+			if t, ok := special.Field("offset").typ.(*godwarf.UintType); ok && t.Size() == 8 {
 				s.specialOffsetUintptrType = 1
 			} else {
 				s.specialOffsetUintptrType = 2

@@ -224,36 +224,36 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
 			var it mapIterator
 			it, err = s.toMapIterator(y, typ.KeyType, typ.ElemType)
-			if err != nil {
-				// logflags.DebuggerLogger().Errorf("toMapIterator failed: %v", err)
-				return
-			}
-			for it.next(s) {
-				// find key ref
-				if key := it.key(); key != nil {
-					key.Name = "$mapkey. (" + key.RealType.String() + ")"
-					if err := s.findRef(key, idx); errors.Is(err, errOutOfRange) {
-						continue
+			if err == nil {
+				for it.next(s) {
+					// find key ref
+					if key := it.key(); key != nil {
+						key.Name = "$mapkey. (" + key.RealType.String() + ")"
+						if err := s.findRef(key, idx); errors.Is(err, errOutOfRange) {
+							continue
+						}
+					}
+					// find val ref
+					if val := it.value(); val != nil {
+						val.Name = "$mapval. (" + val.RealType.String() + ")"
+						if err := s.findRef(val, idx); errors.Is(err, errOutOfRange) {
+							continue
+						}
 					}
 				}
-				// find val ref
-				if val := it.value(); val != nil {
-					val.Name = "$mapval. (" + val.RealType.String() + ")"
-					if err := s.findRef(val, idx); errors.Is(err, errOutOfRange) {
-						continue
+			}
+			if it != nil {
+				// avoid missing memory
+				objects, size, count := it.referenceInfo()
+				for _, obj := range objects {
+					if obj.hb.nextPtr(false) != 0 {
+						// still has pointer, add to the finalMarks
+						s.finalMarks = append(s.finalMarks, finalMarkParam{idx, obj.hb})
 					}
 				}
+				x.size += size
+				x.count += count
 			}
-			// avoid missing memory
-			objects, size, count := it.referenceInfo()
-			for _, obj := range objects {
-				if obj.hb.nextPtr(false) != 0 {
-					// still has pointer, add to the finalMarks
-					s.finalMarks = append(s.finalMarks, finalMarkParam{idx, obj.hb})
-				}
-			}
-			x.size += size
-			x.count += count
 		}
 	case *godwarf.StringType:
 		var strAddr, strLen uint64
