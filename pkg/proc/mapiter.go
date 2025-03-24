@@ -1,3 +1,18 @@
+// Copyright (c) 2014 Derek Parker
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of
+// this software and associated documentation files (the "Software"), to deal in
+// the Software without restriction, including without limitation the rights to
+// use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// This file may have been modified by CloudWeGo authors. All CloudWeGo
+// Modifications are Copyright 2025 CloudWeGo Authors.
+
 package proc
 
 import (
@@ -413,10 +428,12 @@ type swissGroup struct {
 	ctrls []byte
 }
 
-var errSwissTableCouldNotLoad = errors.New("could not load one of the tables")
-var errSwissMapBadType = errors.New("swiss table type does not have some required fields")
-var errSwissMapBadTableField = errors.New("swiss table bad table field")
-var errSwissMapBadGroupTypeErr = errors.New("bad swiss map type, group type lacks some required fields")
+var (
+	errSwissTableCouldNotLoad  = errors.New("could not load one of the tables")
+	errSwissMapBadType         = errors.New("swiss table type does not have some required fields")
+	errSwissMapBadTableField   = errors.New("swiss table bad table field")
+	errSwissMapBadGroupTypeErr = errors.New("bad swiss map type, group type lacks some required fields")
+)
 
 // loadTypes determines the correct type for it.dirPtr:  the linker records
 // this type as **table but in reality it is either *[dirLen]*table for
@@ -685,7 +702,7 @@ func (it *mapIteratorSwiss) value() *ReferenceVariable {
 }
 
 func (it *mapIteratorSwiss) slotIsEmptyOrDeleted(k uint32) bool {
-	//TODO: check that this hasn't changed after it's merged and the TODO is deleted
+	// TODO: check that this hasn't changed after it's merged and the TODO is deleted
 	return it.group.ctrls[k]&swissTableCtrlEmpty == swissTableCtrlEmpty
 }
 
