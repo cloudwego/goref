@@ -10,7 +10,7 @@ type PtrStruct struct {
 }
 
 type BigElem struct {
-	Ptrs [512]PtrStruct
+	Ptrs [512 * 1024]PtrStruct
 	X    uint64
 }
 

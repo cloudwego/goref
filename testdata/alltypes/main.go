@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"runtime"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -19,6 +20,17 @@ type MyChan struct {
 type SubRequest struct {
 	E map[string]string
 	F map[int64]*MyChan
+	G *sync.Map
+}
+
+func initSyncMap() *sync.Map {
+	sm := sync.Map{}
+	sm.Store("1", make([]byte, 1024))
+	sm.Store("2", make([]byte, 1024))
+	sm.Store("3", make([]byte, 1024))
+	sm.Store("4", make([]byte, 1024))
+	sm.Store("5", make([]byte, 1024))
+	return &sm
 }
 
 type Request struct {
@@ -95,6 +107,7 @@ func incall(a *int64, b *string) (res *Request) {
 					cchan: make(chan *InnerMessage, 100),
 				},
 			},
+			G: initSyncMap(),
 		},
 		X: []*SubRequest{
 			{
@@ -106,6 +119,7 @@ func incall(a *int64, b *string) (res *Request) {
 						cchan: make(chan *InnerMessage, 100),
 					},
 				},
+				G: initSyncMap(),
 			},
 		},
 	}
@@ -131,6 +145,7 @@ func incall(a *int64, b *string) (res *Request) {
 					cchan: make(chan *InnerMessage, 100),
 				},
 			},
+			G: initSyncMap(),
 		},
 		X: []*SubRequest{
 			{
@@ -142,6 +157,7 @@ func incall(a *int64, b *string) (res *Request) {
 						cchan: make(chan *InnerMessage, 100),
 					},
 				},
+				G: initSyncMap(),
 			},
 		},
 	}
