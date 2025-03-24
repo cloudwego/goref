@@ -26,8 +26,6 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
-var errVariableNotFound = fmt.Errorf("variable not found")
-
 // ReferenceVariable represents a variable. It contains the address, name,
 // type and other information parsed from both the Dwarf information
 // and the memory of the debugged process.
