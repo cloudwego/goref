@@ -21,7 +21,6 @@ import (
 	"os"
 	"reflect"
 	"regexp"
-	"strconv"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/go-delve/delve/pkg/dwarf/reader"
@@ -223,37 +222,38 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			return
 		}
 		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
-			var it *mapIterator
-			it, err = s.toMapIterator(y)
-			if err != nil {
-				// logflags.DebuggerLogger().Errorf("toMapIterator failed: %v", err)
-				return
-			}
-			for s.next(it) {
-				// find key ref
-				if key := it.key(); key != nil {
-					key.Name = "$mapkey. (" + key.RealType.String() + ")"
-					if err := s.findRef(key, idx); errors.Is(err, errOutOfRange) {
-						continue
+			var it mapIterator
+			it, err = s.toMapIterator(y, typ.KeyType, typ.ElemType)
+			if err == nil {
+				for it.next(s) {
+					// find key ref
+					if key := it.key(); key != nil {
+						key.Name = "$mapkey. (" + key.RealType.String() + ")"
+						if err := s.findRef(key, idx); errors.Is(err, errOutOfRange) {
+							continue
+						}
+					}
+					// find val ref
+					if val := it.value(); val != nil {
+						val.Name = "$mapval. (" + val.RealType.String() + ")"
+						if err := s.findRef(val, idx); errors.Is(err, errOutOfRange) {
+							continue
+						}
 					}
 				}
-				// find val ref
-				if val := it.value(); val != nil {
-					val.Name = "$mapval. (" + val.RealType.String() + ")"
-					if err := s.findRef(val, idx); errors.Is(err, errOutOfRange) {
-						continue
+			}
+			if it != nil {
+				// avoid missing memory
+				objects, size, count := it.referenceInfo()
+				for _, obj := range objects {
+					if obj.hb.nextPtr(false) != 0 {
+						// still has pointer, add to the finalMarks
+						s.finalMarks = append(s.finalMarks, finalMarkParam{idx, obj.hb})
 					}
 				}
+				x.size += size
+				x.count += count
 			}
-			// avoid missing memory
-			for _, obj := range it.objects {
-				if obj.hb.nextPtr(false) != 0 {
-					// still has pointer, add to the finalMarks
-					s.finalMarks = append(s.finalMarks, finalMarkParam{idx, obj.hb})
-				}
-			}
-			x.size += it.size
-			x.count += it.count
 		}
 	case *godwarf.StringType:
 		var strAddr, strLen uint64
@@ -321,8 +321,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 	case *godwarf.StructType:
 		typ = s.specialStructTypes(typ)
 		for _, field := range typ.Field {
-			fieldAddr := x.Addr.Add(field.ByteOffset)
-			y := newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), x.mem, x.hb)
+			y := x.toField(field)
 			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
 				break
 			}
@@ -333,13 +332,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			return
 		}
 		for i := int64(0); i < typ.Count; i++ {
-			elemAddr := x.Addr.Add(i * eType.Size())
-			// collapse 10+ elements by default
-			name := "[10+]"
-			if i < 10 {
-				name = "[" + strconv.Itoa(int(i)) + "]"
-			}
-			y := newReferenceVariable(elemAddr, name+". ("+eType.String()+")", eType, x.mem, x.hb)
+			y := x.arrayAccess(i)
 			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
 				break
 			}
@@ -560,9 +553,9 @@ func ObjectReference(t *proc.Target, filename string) error {
 	// Finalizers
 	for _, fin := range heapScope.finalizers {
 		// scan object
-		s.findRef(newReferenceVariable(fin.p, "finalized", new(finalizePtrType), s.mem, nil), nil)
+		s.findRef(newReferenceVariable(fin.p, "runtime.SetFinalizer", new(finalizePtrType), s.mem, nil), nil)
 		// scan finalizer
-		s.findRef(newReferenceVariable(fin.fn, "finalizer", new(godwarf.FuncType), s.mem, nil), nil)
+		s.findRef(newReferenceVariable(fin.fn, "runtime.SetFinalizer", new(godwarf.FuncType), s.mem, nil), nil)
 	}
 
 	for _, param := range s.finalMarks {

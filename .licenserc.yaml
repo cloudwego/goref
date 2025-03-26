@@ -13,6 +13,7 @@ header:
     - pkg/proc/protobuf.go
     - pkg/proc/region.go
     - pkg/proc/variables.go
+    - pkg/proc/mapiter.go
     - testdata
 
   comment: on-failure
