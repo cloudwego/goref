@@ -20,23 +20,24 @@ import (
 	"text/template"
 )
 
-func init() {
-	buildInfo = moduleBuildInfo
-}
-
 var buildInfoTmpl = ` mod	{{.Main.Path}}	{{.Main.Version}}	{{.Main.Sum}}
 {{range .Deps}} dep	{{.Path}}	{{.Version}}	{{.Sum}}{{if .Replace}}
 	=> {{.Replace.Path}}	{{.Replace.Version}}	{{.Replace.Sum}}{{end}}
 {{end}}`
 
+var buildInfo *debug.BuildInfo
+
+func init() {
+	buildInfo, _ = debug.ReadBuildInfo()
+}
+
 func moduleBuildInfo() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
+	if buildInfo == nil {
 		return "not built in module mode"
 	}
 
 	buf := new(bytes.Buffer)
-	err := template.Must(template.New("buildinfo").Parse(buildInfoTmpl)).Execute(buf, info)
+	err := template.Must(template.New("buildinfo").Parse(buildInfoTmpl)).Execute(buf, buildInfo)
 	if err != nil {
 		panic(err)
 	}
