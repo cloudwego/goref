@@ -19,37 +19,13 @@ import (
 	"runtime"
 )
 
-// Version represents the current version of Delve.
-type Version struct {
-	Major    string
-	Minor    string
-	Patch    string
-	Metadata string
-	Build    string
-}
-
-// DelveVersion is the current version of Delve.
-var DelveVersion = Version{
-	Major: "1", Minor: "23", Patch: "0", Metadata: "",
-}
-
-func (v Version) String() string {
-	fixBuild(&v)
-	ver := fmt.Sprintf("Version: %s.%s.%s", v.Major, v.Minor, v.Patch)
-	if v.Metadata != "" {
-		ver += "-" + v.Metadata
+func Version() string {
+	if buildInfo == nil {
+		return "not built in module mode"
 	}
-	return fmt.Sprintf("%s\nBuild: %s", ver, v.Build)
-}
-
-var buildInfo = func() string {
-	return ""
+	return fmt.Sprintf("Version: %s\nBuild: %s\n", buildInfo.Main.Version, buildInfo.Main.Sum)
 }
 
 func BuildInfo() string {
-	return fmt.Sprintf("%s\n%s", runtime.Version(), buildInfo())
-}
-
-var fixBuild = func(v *Version) {
-	// does nothing
+	return fmt.Sprintf("%s\n%s", runtime.Version(), moduleBuildInfo())
 }
