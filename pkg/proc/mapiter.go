@@ -553,8 +553,11 @@ func (it *mapIteratorSwiss) next(s *ObjRefScope) bool {
 			}
 		}
 
-		countGroups := it.tab.groups.RealType.(*godwarf.ArrayType).Count
-		for ; it.groupIdx < uint64(countGroups); it.nextGroup() {
+		var countGroups uint64
+		if it.tab.groups != nil {
+			countGroups = it.tab.groups.arrayLen()
+		}
+		for ; it.groupIdx < countGroups; it.nextGroup() {
 			if it.maxNumGroups > 0 && it.groupIdx+it.groupCount >= it.maxNumGroups {
 				return false
 			}
@@ -637,13 +640,13 @@ func (it *mapIteratorSwiss) loadCurrentTable(s *ObjRefScope) (err error) {
 	if tab == nil {
 		return errSwissTableCouldNotLoad
 	}
-
 	tab = tab.dereference(s)
-	if tab != nil {
-		it.size += tab.size
-		it.count += tab.count
-		it.objects = append(it.objects, tab)
+	if tab == nil {
+		return errSwissTableCouldNotLoad
 	}
+	it.size += tab.size
+	it.count += tab.count
+	it.objects = append(it.objects, tab)
 
 	r := &swissTable{}
 

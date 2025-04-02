@@ -87,6 +87,14 @@ func (v *ReferenceVariable) arrayAccess(idx int64) *ReferenceVariable {
 	return newReferenceVariable(elemAddr, name+". ("+at.Type.String()+")", resolveTypedef(at.Type), v.mem, v.hb)
 }
 
+func (v *ReferenceVariable) arrayLen() uint64 {
+	at, ok := v.RealType.(*godwarf.ArrayType)
+	if !ok {
+		return 0
+	}
+	return uint64(at.Count)
+}
+
 func (v *ReferenceVariable) asInt() (int64, error) {
 	return readIntRaw(v.mem, uint64(v.Addr), 8)
 }
