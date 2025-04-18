@@ -28,10 +28,18 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
-const (
-	maxRefDepth           = 256
+var (
+	// the max reference depth shown by pprof
+	maxRefDepth = 256
+
+	// disable dwarf searching
+	// All variables will be hidden, and only the frame function names and segment names will be shown.
 	disableDwarfSearching = false
 )
+
+func SetMaxRefDepth(depth int) {
+	maxRefDepth = depth
+}
 
 type ObjRefScope struct {
 	*HeapScope
