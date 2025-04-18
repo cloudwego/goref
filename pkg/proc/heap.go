@@ -561,23 +561,28 @@ func (s *HeapScope) parseSegment(name string, md *region) *segment {
 func (s *HeapScope) stackPtrMask(start, end Address, frames []proc.Stackframe) []*framePointerMask {
 	var frPtrMasks []*framePointerMask
 	for i := range frames {
-		pc := frames[i].Regs.PC()
-		fn := s.bi.PCToFunc(pc)
-		if fn == nil {
-			continue
-		}
 		sp := Address(frames[i].Regs.SP())
 		fp := Address(frames[i].Regs.FrameBase)
 		if fp <= sp || fp > end || sp < start {
 			// invalid frame pointer
 			continue
 		}
+		if frames[i].Inlined {
+			// skip inlined frame to report the name of the caller function
+			continue
+		}
 		ptrMask := make([]uint64, CeilDivide(fp.Sub(sp)/8, 64))
 		for i := range ptrMask {
 			ptrMask[i] = ^uint64(0)
 		}
+		var funcName string
+		if frames[i].Call.Fn != nil {
+			funcName = frames[i].Call.Fn.Name
+		} else {
+			funcName = "???UnknownFrameFunction???"
+		}
 		frPtrMasks = append(frPtrMasks, &framePointerMask{
-			funcName:          fn.Name,
+			funcName:          funcName,
 			gcMaskBitIterator: *newGCBitsIterator(sp, fp, sp, ptrMask),
 		})
 	}

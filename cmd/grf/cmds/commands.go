@@ -17,6 +17,7 @@ package cmds
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 
@@ -36,6 +37,7 @@ var (
 	conf        *config.Config
 	loadConfErr error
 	outFile     string
+	maxRefDepth int
 
 	// verbose is whether to log verbose info, like debug logs.
 	verbose bool
@@ -71,6 +73,7 @@ You'll have to wait for goref until it outputs 'successfully output to ...', or 
 		},
 		Run: attachCmd,
 	}
+	attachCommand.Flags().IntVar(&maxRefDepth, "max-depth", 256, "max reference depth shown by pprof")
 	attachCommand.Flags().StringVarP(&outFile, "out", "o", "grf.out", "output file name")
 	rootCommand.AddCommand(attachCommand)
 
@@ -89,6 +92,7 @@ You'll have to wait for goref until it outputs 'successfully output to ...', or 
 		},
 		Run: coreCmd,
 	}
+	coreCommand.Flags().IntVar(&maxRefDepth, "max-depth", 256, "max reference depth shown by pprof")
 	coreCommand.Flags().StringVarP(&outFile, "out", "o", "grf.out", "output file name")
 	rootCommand.AddCommand(coreCommand)
 
@@ -141,6 +145,11 @@ func execute(attachPid int, exeFile, coreFile, outFile string, conf *config.Conf
 	}
 	if loadConfErr != nil {
 		logflags.DebuggerLogger().Errorf("%v", loadConfErr)
+	}
+
+	if maxRefDepth > 0 {
+		log.Printf("set max reference depth to %d.", maxRefDepth)
+		myproc.SetMaxRefDepth(maxRefDepth)
 	}
 
 	dConf := debugger.Config{

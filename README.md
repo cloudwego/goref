@@ -1,5 +1,7 @@
 # Goref
 
+English | [中文](README_cn.md)
+
 [![WebSite](https://img.shields.io/website?up_message=cloudwego&url=https%3A%2F%2Fwww.cloudwego.io%2F)](https://www.cloudwego.io/)
 [![License](https://img.shields.io/github/license/cloudwego/goref)](https://github.com/cloudwego/goref/blob/main/LICENSE-APACHE)
 
@@ -22,6 +24,8 @@ $ grf attach ${PID}
 successfully output to `grf.out`
 $ go tool pprof -http=:5079 ./grf.out
 ```
+
+> Please be aware that `grf attach` will suspend the program until the command exits.
 
 The opened HTML page displays the reference distribution of the heap memory. You can choose to view the "inuse space" or "inuse objects".
 
@@ -47,10 +51,9 @@ successfully output to `grf.out`
 - Executable file: go1.17 ~ go1.24.
 - Compile goref tool: >= go1.21.
 
-
 ## Docs
 
-[How it Works](docs/principle.md) | [实现原理](docs/principle_cn.md)
+[How it Works](docs/principle.md) | [Advanced Usage](docs/advanced_usage.md)
 
 ## Credit
 
