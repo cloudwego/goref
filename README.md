@@ -25,6 +25,8 @@ successfully output to `grf.out`
 $ go tool pprof -http=:5079 ./grf.out
 ```
 
+> Please be aware that `grf attach` will suspend the program until the command exits.
+
 The opened HTML page displays the reference distribution of the heap memory. You can choose to view the "inuse space" or "inuse objects".
 
 For example, the heap profile sampled from a [testing program](https://github.com/cloudwego/goref/blob/main/testdata/mockleak/main.go) is shown below, which reflects the call stack distribution of object creation.
@@ -44,44 +46,14 @@ $ grf core ${execfile} ${corefile}
 successfully output to `grf.out`
 ```
 
-### Advanced Usage
-
-- ** Set the maximum depth of reference chain**
-
-Goref defaults to a maximum depth of 256 for reference analysis, which is to maximize the display of object reference graphs. However, in some cases, it may take a long time to analyze the reference chain. Therefore, we provide a command line parameter `--max-depth` to set the maximum depth of reference analysis.
-
-For example, the common scenario of `context.Context` nesting in Go programs is that it is deeply nested, but we only need to analyze up to the first few layers of `context.Context`. Then you can use the following command:
-
-```bash
-goref attach ${pid} --max-depth=10
-```
-
-For reference chains that are too deep, setting this parameter can help us accelerate the execution of goref.
-
-- **Analyze coredump files**
-
-Goref consumes additional memory if runs in attach mode. In the memory leak scenario, it may cause OOM problems. Therefore, users can use the `gcore` command to collect coredump files, compress the executable file along with it, and then copy it to another environment for analysis.
-
-For example, on Debian 11:
-
-```bash
-$ 
-$ apt-get update
-$ apt-get install gdb
-$ gcore ${pid}
-$ ...
-$ grf core ${execfile} ${corefile}
-```
-
 ## Go Version Constraints
 
 - Executable file: go1.17 ~ go1.24.
 - Compile goref tool: >= go1.21.
 
-
 ## Docs
 
-[How it Works](docs/principle.md)
+[How it Works](docs/principle.md) | [Advanced Usage](docs/advanced_usage.md)
 
 ## Credit
 
