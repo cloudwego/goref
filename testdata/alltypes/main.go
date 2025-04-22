@@ -25,11 +25,11 @@ type SubRequest struct {
 
 func initSyncMap() *sync.Map {
 	sm := sync.Map{}
-	sm.Store("1", make([]byte, 1024))
-	sm.Store("2", make([]byte, 1024))
-	sm.Store("3", make([]byte, 1024))
-	sm.Store("4", make([]byte, 1024))
-	sm.Store("5", make([]byte, 1024))
+	sm.Store(&InnerMessage{msgs: []string{string(make([]byte, 1024))}}, InnerMessage{msgs: []string{string(make([]byte, 1024))}})
+	sm.Store(&InnerMessage{msgs: []string{string(make([]byte, 1024))}}, InnerMessage{msgs: []string{string(make([]byte, 1024))}})
+	sm.Store(&InnerMessage{msgs: []string{string(make([]byte, 1024))}}, InnerMessage{msgs: []string{string(make([]byte, 1024))}})
+	sm.Store(&InnerMessage{msgs: []string{string(make([]byte, 1024))}}, InnerMessage{msgs: []string{string(make([]byte, 1024))}})
+	sm.Store(&InnerMessage{msgs: []string{string(make([]byte, 1024))}}, InnerMessage{msgs: []string{string(make([]byte, 1024))}})
 	return &sm
 }
 
@@ -81,6 +81,7 @@ func SliceByteToString(b []byte) string {
 func genericString() string {
 	ss := make([]byte, 1024)
 	ss = ss[100:200]
+	copy(ss[:], time.Now().String())
 	return SliceByteToString(ss)
 }
 
@@ -92,6 +93,14 @@ func finalizing() {
 	})
 }
 
+func initMap(n int) map[string]string {
+	m := make(map[string]string)
+	for i := 0; i < n; i++ {
+		m[genericString()] = genericString()
+	}
+	return m
+}
+
 func incall(a *int64, b *string) (res *Request) {
 	globalReq.C = []string{genericString(), genericString(), genericString()}
 	req := &Request{
@@ -99,9 +108,7 @@ func incall(a *int64, b *string) (res *Request) {
 		B: b,
 		C: []string{genericString(), genericString(), genericString()},
 		D: &SubRequest{
-			E: map[string]string{
-				genericString(): genericString(),
-			},
+			E: initMap(1),
 			F: map[int64]*MyChan{
 				23131: {
 					cchan: make(chan *InnerMessage, 100),
@@ -206,7 +213,7 @@ func incall(a *int64, b *string) (res *Request) {
 
 	finalizing()
 
-	time.Sleep(100 * time.Second)
+	time.Sleep(10000 * time.Second)
 
 	go func() { nnext() }()
 

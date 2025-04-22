@@ -28,6 +28,15 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
+// display memory space which doesn't match the dwarf type definition
+// e.g.
+// var arr [16]string
+// var p *string = &arr[0]
+// return p
+// The memory space of arr[1:] never matches the dwarf type definition of *string after returned,
+// so we need to name the other space as unknownSpaceName to display it correctly.
+const unknownSpaceName = "$unknown_space$"
+
 var (
 	// the max reference depth shown by pprof
 	maxRefDepth = 256
@@ -163,7 +172,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 	if x.Name != "" {
 		if idx != nil && idx.depth >= maxRefDepth {
 			// No scan for depth >= maxRefDepth, as it could lead to uncontrollable reference chain depths.
-			// No need to worry about memory not being able to be recorded, as the parent object will be finally scanned.
+			// Don't worry about memory can't be recorded, as the parent object will be finally scanned.
 			return
 		}
 		// For array elem / map kv / struct field type, record them.
@@ -174,7 +183,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		defer func() {
 			if x.hb.nextPtr(false) != 0 {
 				// still has pointer, add to the finalMarks
-				s.finalMarks = append(s.finalMarks, finalMarkParam{idx, x.hb})
+				s.finalMarks = append(s.finalMarks, finalMarkParam{idx.pushHead(s.pb, unknownSpaceName), x.hb})
 			}
 		}()
 	}
@@ -256,7 +265,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 				for _, obj := range objects {
 					if obj.hb.nextPtr(false) != 0 {
 						// still has pointer, add to the finalMarks
-						s.finalMarks = append(s.finalMarks, finalMarkParam{idx, obj.hb})
+						s.finalMarks = append(s.finalMarks, finalMarkParam{idx.pushHead(s.pb, unknownSpaceName), obj.hb})
 					}
 				}
 				x.size += size
@@ -423,18 +432,42 @@ func (s *ObjRefScope) closureStructType(fn *proc.Function) *godwarf.StructType {
 	return st
 }
 
-var atomicPointerRegex = regexp.MustCompile(`^sync/atomic\.Pointer\[.*\]$`)
+var (
+	atomicPointerRegex = regexp.MustCompile(`^sync/atomic\.Pointer\[.*\]$`)
+
+	atomicPointerReplacingMap = map[*godwarf.StructType]*godwarf.StructType{}
+
+	// type of sync/atomic.Pointer[internal/sync.entry[interface {},interface {}]]
+	entryPtrTypeInit bool
+	entryPtrType     *godwarf.StructType
+)
 
 func (s *ObjRefScope) specialStructTypes(st *godwarf.StructType) *godwarf.StructType {
+	if st.StructName == "sync/atomic.Pointer[internal/sync.node[interface {},interface {}]]" {
+		// goexperiment.synchashtriemap
+		// replace `internal/sync.node` by `sync/atomic.entry`
+		if !entryPtrTypeInit {
+			entryPtrTypeInit = true
+			tmp, _ := findType(s.bi, "sync/atomic.Pointer[internal/sync.entry[interface {},interface {}]]")
+			entryPtrType, _ = tmp.(*godwarf.StructType)
+		}
+		if entryPtrType != nil {
+			st = entryPtrType
+		}
+	}
 	switch {
 	case atomicPointerRegex.MatchString(st.StructName):
 		// v *sync.readOnly
+		if nst := atomicPointerReplacingMap[st]; nst != nil {
+			return nst
+		}
 		nst := *st
 		nst.Field = make([]*godwarf.StructField, len(st.Field))
 		copy(nst.Field, st.Field)
 		nf := *nst.Field[2]
 		nf.Type = nst.Field[0].Type.(*godwarf.ArrayType).Type
 		nst.Field[2] = &nf
+		atomicPointerReplacingMap[st] = &nst
 		return &nst
 	}
 	return st
@@ -561,9 +594,9 @@ func ObjectReference(t *proc.Target, filename string) error {
 	// Finalizers
 	for _, fin := range heapScope.finalizers {
 		// scan object
-		s.findRef(newReferenceVariable(fin.p, "runtime.SetFinalizer", new(finalizePtrType), s.mem, nil), nil)
+		s.findRef(newReferenceVariable(fin.p, "runtime.SetFinalizer.obj", new(finalizePtrType), s.mem, nil), nil)
 		// scan finalizer
-		s.findRef(newReferenceVariable(fin.fn, "runtime.SetFinalizer", new(godwarf.FuncType), s.mem, nil), nil)
+		s.findRef(newReferenceVariable(fin.fn, "runtime.SetFinalizer.fn", new(godwarf.FuncType), s.mem, nil), nil)
 	}
 
 	for _, param := range s.finalMarks {

@@ -73,7 +73,7 @@ You'll have to wait for goref until it outputs 'successfully output to ...', or 
 		},
 		Run: attachCmd,
 	}
-	attachCommand.Flags().IntVar(&maxRefDepth, "max-depth", 256, "max reference depth shown by pprof")
+	attachCommand.Flags().IntVar(&maxRefDepth, "max-depth", 0, "max reference depth shown by pprof")
 	attachCommand.Flags().StringVarP(&outFile, "out", "o", "grf.out", "output file name")
 	rootCommand.AddCommand(attachCommand)
 
@@ -92,7 +92,7 @@ You'll have to wait for goref until it outputs 'successfully output to ...', or 
 		},
 		Run: coreCmd,
 	}
-	coreCommand.Flags().IntVar(&maxRefDepth, "max-depth", 256, "max reference depth shown by pprof")
+	coreCommand.Flags().IntVar(&maxRefDepth, "max-depth", 0, "max reference depth shown by pprof")
 	coreCommand.Flags().StringVarP(&outFile, "out", "o", "grf.out", "output file name")
 	rootCommand.AddCommand(coreCommand)
 

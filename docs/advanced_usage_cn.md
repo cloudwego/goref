@@ -7,7 +7,7 @@ Goref 默认的引用分析最大深度是256，这是为了能最大限度展�
 例如，Go程序很常见的是 `context.Context` 深度嵌套，但是我们只需要分析到 `context.Context` 的前几层，那么可以使用以下命令：
 
 ```bash
-goref attach ${pid} --max-depth=10
+grf attach ${pid} --max-depth=10
 ```
 
 对于引用链路过深的场景，设置这个参数可以帮助我们加速 goref 运行。
@@ -18,10 +18,10 @@ Goref 以 attach 模式运行会占用额外内存，在内存泄漏场景，可
 
 以 Debian 11 为例：
 ```bash
-$ 
 $ apt-get update
 $ apt-get install gdb
 $ gcore ${pid}
+$ tar -zcvf corezip ./core.${pid} ${execfile}
 $ ...
 $ grf core ${execfile} ${corefile}
 ```
