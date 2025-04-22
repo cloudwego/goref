@@ -7,7 +7,7 @@ Goref defaults to a maximum depth of 256 for reference analysis, which is to max
 For example, the common scenario of `context.Context` nesting in Go programs is that it is deeply nested, but we only need to analyze up to the first few layers of `context.Context`. Then you can use the following command:
 
 ```bash
-goref attach ${pid} --max-depth=10
+grf attach ${pid} --max-depth=10
 ```
 
 For reference chains that are too deep, setting this parameter can help us accelerate the execution of goref.
@@ -19,10 +19,10 @@ Goref consumes additional memory if runs in attach mode. In the memory leak scen
 For example, on Debian 11:
 
 ```bash
-$ 
 $ apt-get update
 $ apt-get install gdb
 $ gcore ${pid}
+$ tar -zcvf corezip ./core.${pid} ${execfile}
 $ ...
 $ grf core ${execfile} ${corefile}
 ```
