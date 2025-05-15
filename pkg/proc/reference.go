@@ -30,20 +30,16 @@ import (
 
 // display memory space which doesn't match the dwarf type definition
 // e.g.
-// var arr [16]string
+// var arr [16]string = [...]string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p"}
 // var p *string = &arr[0]
 // return p
-// The memory space of arr[1:] never matches the dwarf type definition of *string after returned,
-// so we need to name the other space as unknownSpaceName to display it correctly.
-const unknownSpaceName = "$unknown_space$"
+// The sub objects of arr[1:] never be scanned if the dwarf type definition of *string is returned,
+// so we need to name the sub objects as subObjectsName to display them correctly.
+const subObjectsName = "$sub_objects$"
 
 var (
 	// the max reference depth shown by pprof
 	maxRefDepth = 256
-
-	// disable dwarf searching
-	// All variables will be hidden, and only the frame function names and segment names will be shown.
-	disableDwarfSearching = false
 )
 
 func SetMaxRefDepth(depth int) {
@@ -101,33 +97,45 @@ func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem proc.Memory
 }
 
 func (s *HeapScope) markObject(addr Address, mem proc.MemoryReadWriter) (size, count int64) {
-	sp, base := s.findSpanAndBase(addr)
-	if sp == nil {
-		return // not found
+	type stackEntry struct {
+		addr Address
 	}
-	// Find mark bit
-	if !sp.mark(base) {
-		return // already found
-	}
-	realBase := s.copyGCMask(sp, base)
-	size, count = sp.elemSize, 1
-	hb := newGCBitsIterator(realBase, sp.elemEnd(base), sp.base, sp.ptrMask)
-	var cmem proc.MemoryReadWriter
-	for {
-		ptr := hb.nextPtr(true)
-		if ptr == 0 {
-			break
+	var stack []stackEntry
+	stack = append(stack, stackEntry{addr})
+
+	for len(stack) > 0 {
+		entry := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		addr := entry.addr
+
+		sp, base := s.findSpanAndBase(addr)
+		if sp == nil {
+			continue // not found
 		}
-		if cmem == nil {
-			cmem = cacheMemory(mem, uint64(ptr), int(hb.end.Sub(ptr)))
+		// Find mark bit
+		if !sp.mark(base) {
+			continue // already found
 		}
-		nptr, err := readUintRaw(cmem, uint64(ptr), int64(s.bi.Arch.PtrSize()))
-		if err != nil {
-			continue
+		realBase := s.copyGCMask(sp, base)
+		size += sp.elemSize
+		count++
+
+		hb := newGCBitsIterator(realBase, sp.elemEnd(base), sp.base, sp.ptrMask)
+		var cmem proc.MemoryReadWriter
+		for {
+			ptr := hb.nextPtr(true)
+			if ptr == 0 {
+				break
+			}
+			if cmem == nil {
+				cmem = cacheMemory(mem, uint64(ptr), int(hb.end.Sub(ptr)))
+			}
+			nptr, err := readUintRaw(cmem, uint64(ptr), int64(s.bi.Arch.PtrSize()))
+			if err != nil {
+				continue
+			}
+			stack = append(stack, stackEntry{Address(nptr)})
 		}
-		size_, count_ := s.markObject(Address(nptr), cmem)
-		size += size_
-		count += count_
 	}
 	return
 }
@@ -183,7 +191,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		defer func() {
 			if x.hb.nextPtr(false) != 0 {
 				// still has pointer, add to the finalMarks
-				s.finalMarks = append(s.finalMarks, finalMarkParam{idx.pushHead(s.pb, unknownSpaceName), x.hb})
+				s.finalMarks = append(s.finalMarks, finalMarkParam{idx.pushHead(s.pb, subObjectsName), x.hb})
 			}
 		}()
 	}
@@ -265,7 +273,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 				for _, obj := range objects {
 					if obj.hb.nextPtr(false) != 0 {
 						// still has pointer, add to the finalMarks
-						s.finalMarks = append(s.finalMarks, finalMarkParam{idx.pushHead(s.pb, unknownSpaceName), obj.hb})
+						s.finalMarks = append(s.finalMarks, finalMarkParam{idx.pushHead(s.pb, subObjectsName), obj.hb})
 					}
 				}
 				x.size += size
@@ -525,7 +533,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 	// Global variables
 	pvs, _ := scope.PackageVariables(loadSingleValue)
 	for _, pv := range pvs {
-		if pv.Addr == 0 || disableDwarfSearching {
+		if pv.Addr == 0 {
 			continue
 		}
 		s.findRef(newReferenceVariable(Address(pv.Addr), pv.Name, pv.RealType, t.Memory(), nil), nil)
@@ -551,7 +559,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 					continue
 				}
 				for _, l := range locals {
-					if l.Addr == 0 || disableDwarfSearching {
+					if l.Addr == 0 {
 						continue
 					}
 					if l.Name[0] == '&' {

@@ -100,9 +100,11 @@ You'll have to wait for goref until it outputs 'successfully output to ...', or 
 		Use:   "version",
 		Short: "Prints version.",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("Goref Tool\n%s\n", version.Version())
 			if verbose {
+				fmt.Printf("Goref Tool: %s\n", version.Version())
 				fmt.Printf("Build Details: %s\n", version.BuildInfo())
+			} else {
+				fmt.Printf("%s\n", version.Version())
 			}
 		},
 		ValidArgsFunction: cobra.NoFileCompletions,

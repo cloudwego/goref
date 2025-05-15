@@ -150,9 +150,12 @@ Once all objects have been scanned, the reference chains along with the number o
 
 2. **Output sub-object format:**
 
-- Output the field name and type name of the child object, in the form of: `net.Conn`；
+- Output the field name and type name of the child object, in the form of: `conn. (net.Conn)`；
 
 - If it is a map key or value field, it will be output in the form of `$mapkey. (type_name)` or `$mapval. (type_name)`;
 
-- If it is an element of an array, it will be output in the format like `[0]. (type_name)`, and for indices greater than or equal to 10, it will be output in the format `[10+]. (type_name)`.
+- If it is an element of an array, it will be output in the format like `[0]. (type_name)`, and for indices greater than or equal to 10, it will be output in the format `[10+]. (type_name)`;
+  
+- If it is an object referenced by runtime.SetFinalizer, it will be output in the format `runtime.SetFinalizer.obj` or `runtime.SetFinalizer.fn`;
 
+- If they're sub objects of an object without dwarf types, they will be output in the format `$sub_objects$`;

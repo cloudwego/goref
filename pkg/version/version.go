@@ -23,7 +23,7 @@ func Version() string {
 	if buildInfo == nil {
 		return "not built in module mode"
 	}
-	return fmt.Sprintf("Version: %s\nBuild: %s\n", buildInfo.Main.Version, buildInfo.Main.Sum)
+	return buildInfo.Main.Version
 }
 
 func BuildInfo() string {

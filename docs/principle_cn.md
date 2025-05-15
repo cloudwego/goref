@@ -152,9 +152,12 @@ func echo() *byte {
 
 2. **输出的子对象格式：**
 
-- 输出子对象的类型名，形如：`net.Conn`；
+- 输出子对象的字段名和类型名，形如：`conn. (net.Conn)`；
 
 - 如果是 map key 或 value 字段，则以 `$mapkey. (type_name)` 或 `$mapval. (type_name)` 的形式输出；
 
 - 如果是数组的元素，以 `[0]. (type_name)` 格式输出，大于等于 10 的以 `[10+]. (type_name)` 格式输出；
 
+- 如果是被 runtime.SetFinalizer 引用的对象，以 `runtime.SetFinalizer.obj` 或 `runtime.SetFinalizer.fn` 的格式输出；
+
+- 如果是没有 DWARF 类型的子对象，则以 `$sub_objects$` 的格式输出。
