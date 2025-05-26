@@ -71,7 +71,7 @@ func (b *gcMaskBitIterator) resetGCMask(addr Address) error {
 	}
 	// TODO: check gc mask
 	offset := addr.Sub(b.maskBase)
-	b.mask[offset/8/64] &= ^(1 << (offset / 8 % 64))
+	b.mask[offset/8/64+1] &= ^(1 << (offset / 8 % 64))
 	return nil
 }
 
