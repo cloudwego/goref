@@ -191,6 +191,10 @@ func (v *ReferenceVariable) clone() *ReferenceVariable {
 	return &r
 }
 
+func ToReferenceVariable(v *proc.Variable) *ReferenceVariable {
+	return newReferenceVariable(Address(v.Addr), v.Name, v.RealType, getVariableMem(v), nil)
+}
+
 // for special treatment to finalize pointers
 type finalizePtrType struct {
 	godwarf.Type

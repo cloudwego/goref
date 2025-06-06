@@ -23,7 +23,6 @@ import (
 	"regexp"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
-	"github.com/go-delve/delve/pkg/dwarf/reader"
 	"github.com/go-delve/delve/pkg/logflags"
 	"github.com/go-delve/delve/pkg/proc"
 )
@@ -381,7 +380,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		funcAddr, err = readUintRaw(proc.DereferenceMemory(x.mem), closureAddr, int64(s.bi.Arch.PtrSize()))
 		if err == nil && funcAddr != 0 {
 			if fn := s.bi.PCToFunc(funcAddr); fn != nil {
-				cst = s.closureStructType(fn)
+				cst = funcExtra(fn, s.bi).closureStructType
 			}
 		}
 		if cst == nil {
@@ -403,51 +402,6 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 	default:
 	}
 	return
-}
-
-func (s *ObjRefScope) closureStructType(fn *proc.Function) *godwarf.StructType {
-	var fe funcExtra
-	if fe = s.funcExtraMap[fn]; fe.closureStructType != nil {
-		return fe.closureStructType
-	}
-	image := funcToImage(s.bi, fn)
-	dwarfTree, err := getDwarfTree(image, getFunctionOffset(fn))
-	if err != nil {
-		return nil
-	}
-	st := &godwarf.StructType{
-		Kind: "struct",
-	}
-	vars := reader.Variables(dwarfTree, 0, 0, reader.VariablesNoDeclLineCheck|reader.VariablesSkipInlinedSubroutines)
-	for _, v := range vars {
-		off, ok := v.Val(godwarf.AttrGoClosureOffset).(int64)
-		if ok {
-			n, typ, err := readVarEntry(v.Tree, image)
-			if err == nil {
-				if len(n) > 0 && n[0] == '&' {
-					// escaped variables
-					n = n[1:]
-				}
-				sz := typ.Common().ByteSize
-				st.Field = append(st.Field, &godwarf.StructField{
-					Name:       n,
-					Type:       typ,
-					ByteOffset: off,
-					ByteSize:   sz,
-					BitOffset:  off * 8,
-					BitSize:    sz * 8,
-				})
-			}
-		}
-	}
-
-	if len(st.Field) > 0 {
-		lf := st.Field[len(st.Field)-1]
-		st.ByteSize = lf.ByteOffset + lf.Type.Common().ByteSize
-	}
-	fe.closureStructType = st
-	s.funcExtraMap[fn] = fe
-	return st
 }
 
 var (
@@ -518,7 +472,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 		return err
 	}
 
-	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope, funcExtraMap: make(map[*proc.Function]funcExtra)}
+	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope}
 	err = heapScope.readHeap()
 	if err != nil {
 		return err
@@ -534,7 +488,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 		pb:        newProfileBuilder(f),
 	}
 
-	mds, err := proc.LoadModuleData(t.BinInfo(), t.Memory())
+	mds, err := getModuleData(t.BinInfo(), t.Memory())
 	if err != nil {
 		return err
 	}
@@ -546,7 +500,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 		if pv.Addr == 0 {
 			continue
 		}
-		s.findRef(newReferenceVariable(Address(pv.Addr), pv.Name, pv.RealType, t.Memory(), nil), nil)
+		s.findRef(ToReferenceVariable(pv), nil)
 	}
 
 	// Local variables
@@ -562,8 +516,8 @@ func ObjectReference(t *proc.Target, filename string) error {
 		s.g.init(Address(lo), Address(hi), s.stackPtrMask(Address(lo), Address(hi), sf))
 		if len(sf) > 0 {
 			for i := range sf {
-				ms := myEvalScope{EvalScope: *proc.FrameToScope(t, t.Memory(), gr, threadID, sf[i:]...)}
-				locals, err := ms.Locals(t, gr, threadID, mds)
+				es := proc.FrameToScope(t, t.Memory(), gr, threadID, sf[i:]...)
+				locals, err := es.Locals(0, "")
 				if err != nil {
 					logflags.DebuggerLogger().Warnf("local variables err: %v", err)
 					continue
@@ -572,12 +526,8 @@ func ObjectReference(t *proc.Target, filename string) error {
 					if l.Addr == 0 {
 						continue
 					}
-					if l.Name[0] == '&' {
-						// escaped variables
-						l.Name = l.Name[1:]
-					}
 					l.Name = sf[i].Current.Fn.Name + "." + l.Name
-					s.findRef(l, nil)
+					s.findRef(ToReferenceVariable(l), nil)
 				}
 			}
 		}

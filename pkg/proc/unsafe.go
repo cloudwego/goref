@@ -15,7 +15,6 @@
 package proc
 
 import (
-	"debug/dwarf"
 	"unsafe"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
@@ -33,7 +32,6 @@ var (
 	stackField   reflect2.StructField
 	stackLoField reflect2.StructField
 	stackHiField reflect2.StructField
-	offsetField  reflect2.StructField
 )
 
 func init() {
@@ -46,9 +44,6 @@ func init() {
 	st := reflect2.TypeOf(stackField.Get(&proc.G{})).(reflect2.PtrType).Elem().(reflect2.StructType)
 	stackLoField = st.FieldByName("lo")
 	stackHiField = st.FieldByName("hi")
-
-	ft := reflect2.TypeOf(proc.Function{}).(reflect2.StructType)
-	offsetField = ft.FieldByName("offset")
 }
 
 func getVariableMem(v *proc.Variable) proc.MemoryReadWriter {
@@ -62,30 +57,24 @@ func getStack(g *proc.G) (lo, hi uint64) {
 	return
 }
 
-func getFunctionOffset(f *proc.Function) (offset dwarf.Offset) {
-	return *offsetField.Get(f).(*dwarf.Offset)
-}
-
-//go:linkname image github.com/go-delve/delve/pkg/proc.(*EvalScope).image
-func image(scope *proc.EvalScope) *proc.Image
-
-//go:linkname getDwarfTree github.com/go-delve/delve/pkg/proc.(*Image).getDwarfTree
-func getDwarfTree(image *proc.Image, off dwarf.Offset) (*godwarf.Tree, error)
-
 //go:linkname findType github.com/go-delve/delve/pkg/proc.(*BinaryInfo).findType
 func findType(bi *proc.BinaryInfo, name string) (godwarf.Type, error)
 
-//go:linkname funcToImage github.com/go-delve/delve/pkg/proc.(*BinaryInfo).funcToImage
-func funcToImage(bi *proc.BinaryInfo, fn *proc.Function) *proc.Image
+//go:linkname funcExtra github.com/go-delve/delve/pkg/proc.(*Function).extra
+func funcExtra(fn *proc.Function, bi *proc.BinaryInfo) *functionExtra
 
-//go:linkname rangeFuncStackTrace github.com/go-delve/delve/pkg/proc.rangeFuncStackTrace
-func rangeFuncStackTrace(tgt *proc.Target, g *proc.G) ([]proc.Stackframe, error)
-
-//go:linkname readVarEntry github.com/go-delve/delve/pkg/proc.readVarEntry
-func readVarEntry(entry *godwarf.Tree, image *proc.Image) (name string, typ godwarf.Type, err error)
+//go:linkname getModuleData github.com/go-delve/delve/pkg/proc.(*BinaryInfo).getModuleData
+func getModuleData(bi *proc.BinaryInfo, mem proc.MemoryReadWriter) ([]proc.ModuleData, error)
 
 //go:linkname newVariable github.com/go-delve/delve/pkg/proc.newVariable
 func newVariable(name string, addr uint64, dwarfType godwarf.Type, bi *proc.BinaryInfo, mem proc.MemoryReadWriter) *proc.Variable
+
+// keep sync with github.com/go-delve/delve/pkg/proc/functionExtra
+type functionExtra struct {
+	closureStructType *godwarf.StructType
+	rangeParent       *proc.Function
+	rangeBodies       []*proc.Function
+}
 
 func uint64s2str(us []uint64) string {
 	p := unsafe.Pointer(unsafe.SliceData(us))
