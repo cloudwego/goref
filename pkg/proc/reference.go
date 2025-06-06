@@ -207,6 +207,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			// flatten reference
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	case *godwarf.ChanType:
 		var ptrval uint64
@@ -238,7 +239,9 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 				_ = s.findRef(z, idx)
 				x.size += z.size
 				x.count += z.count
+				rvpool.Put(z)
 			}
+			rvpool.Put(y)
 		}
 	case *godwarf.MapType:
 		var ptrval uint64
@@ -275,10 +278,12 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 						// still has pointer, add to the finalMarks
 						s.finalMarks = append(s.finalMarks, finalMarkParam{idx.pushHead(s.pb, subObjectsName), obj.hb})
 					}
+					rvpool.Put(obj)
 				}
 				x.size += size
 				x.count += count
 			}
+			rvpool.Put(y)
 		}
 	case *godwarf.StringType:
 		var strAddr, strLen uint64
@@ -290,6 +295,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	case *godwarf.SliceType:
 		var base, cap_ uint64
@@ -308,6 +314,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	case *godwarf.InterfaceType:
 		_type, data := s.readInterface(x)
@@ -342,6 +349,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	case *godwarf.StructType:
 		typ = s.specialStructTypes(typ)
@@ -383,12 +391,14 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			_ = s.findRef(closure, idx)
 			x.size += closure.size
 			x.count += closure.count
+			rvpool.Put(closure)
 		}
 	case *finalizePtrType:
 		if y := s.findObject(x.Addr, new(godwarf.VoidType), x.mem); y != nil {
 			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	default:
 	}

@@ -20,11 +20,18 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"sync"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/go-delve/delve/pkg/logflags"
 	"github.com/go-delve/delve/pkg/proc"
 )
+
+var rvpool = sync.Pool{
+	New: func() interface{} {
+		return &ReferenceVariable{}
+	},
+}
 
 // ReferenceVariable represents a variable. It contains the address, name,
 // type and other information parsed from both the Dwarf information
@@ -45,7 +52,9 @@ type ReferenceVariable struct {
 }
 
 func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator) *ReferenceVariable {
-	return &ReferenceVariable{Addr: addr, Name: name, RealType: typ, mem: mem, hb: hb}
+	rv := rvpool.Get().(*ReferenceVariable)
+	rv.Addr, rv.Name, rv.RealType, rv.mem, rv.hb, rv.size, rv.count = addr, name, typ, mem, hb, 0, 0
+	return rv
 }
 
 func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator, size, count int64) *ReferenceVariable {
