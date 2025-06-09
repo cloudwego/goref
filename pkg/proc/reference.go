@@ -36,10 +36,8 @@ import (
 // so we need to name the sub objects as subObjectsName to display them correctly.
 const subObjectsName = "$sub_objects$"
 
-var (
-	// the max reference depth shown by pprof
-	maxRefDepth = 256
-)
+// the max reference depth shown by pprof
+var maxRefDepth = 256
 
 func SetMaxRefDepth(depth int) {
 	maxRefDepth = depth
@@ -259,6 +257,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 						if err := s.findRef(key, idx); errors.Is(err, errOutOfRange) {
 							continue
 						}
+						rvpool.Put(key)
 					}
 					// find val ref
 					if val := it.value(); val != nil {
@@ -266,6 +265,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 						if err := s.findRef(val, idx); errors.Is(err, errOutOfRange) {
 							continue
 						}
+						rvpool.Put(val)
 					}
 				}
 			}
@@ -277,7 +277,6 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 						// still has pointer, add to the finalMarks
 						s.finalMarks = append(s.finalMarks, finalMarkParam{idx.pushHead(s.pb, subObjectsName), obj.hb})
 					}
-					rvpool.Put(obj)
 				}
 				x.size += size
 				x.count += count
@@ -341,6 +340,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 				}
 			}
 		}
+		rvpool.Put(data)
 		if ityp == nil {
 			ityp = new(godwarf.VoidType)
 		}
@@ -354,7 +354,9 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		typ = s.specialStructTypes(typ)
 		for _, field := range typ.Field {
 			y := x.toField(field)
-			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
+			err = s.findRef(y, idx)
+			rvpool.Put(y)
+			if errors.Is(err, errOutOfRange) {
 				break
 			}
 		}
@@ -365,7 +367,9 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		}
 		for i := int64(0); i < typ.Count; i++ {
 			y := x.arrayAccess(i)
-			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
+			err = s.findRef(y, idx)
+			rvpool.Put(y)
+			if errors.Is(err, errOutOfRange) {
 				break
 			}
 		}
@@ -500,7 +504,9 @@ func ObjectReference(t *proc.Target, filename string) error {
 		if pv.Addr == 0 {
 			continue
 		}
-		s.findRef(ToReferenceVariable(pv), nil)
+		rv := ToReferenceVariable(pv)
+		s.findRef(rv, nil)
+		rvpool.Put(rv)
 	}
 
 	// Local variables
@@ -527,7 +533,9 @@ func ObjectReference(t *proc.Target, filename string) error {
 						continue
 					}
 					l.Name = sf[i].Current.Fn.Name + "." + l.Name
-					s.findRef(ToReferenceVariable(l), nil)
+					rv := ToReferenceVariable(l)
+					s.findRef(rv, nil)
+					rvpool.Put(rv)
 				}
 			}
 		}
@@ -562,9 +570,13 @@ func ObjectReference(t *proc.Target, filename string) error {
 	// Finalizers
 	for _, fin := range heapScope.finalizers {
 		// scan object
-		s.findRef(newReferenceVariable(fin.p, "runtime.SetFinalizer.obj", new(finalizePtrType), s.mem, nil), nil)
+		rv := newReferenceVariable(fin.p, "runtime.SetFinalizer.obj", new(finalizePtrType), s.mem, nil)
+		s.findRef(rv, nil)
+		rvpool.Put(rv)
 		// scan finalizer
-		s.findRef(newReferenceVariable(fin.fn, "runtime.SetFinalizer.fn", new(godwarf.FuncType), s.mem, nil), nil)
+		rv = newReferenceVariable(fin.fn, "runtime.SetFinalizer.fn", new(godwarf.FuncType), s.mem, nil)
+		s.findRef(rv, nil)
+		rvpool.Put(rv)
 	}
 
 	for _, param := range s.finalMarks {

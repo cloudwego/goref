@@ -161,16 +161,15 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 				continue
 			}
 			// +rtype *itab|*internal/abi.ITab
-			tab := newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(v.mem), nil)
-			if tab.Addr != 0 {
-				for _, tf := range tab.RealType.(*godwarf.StructType).Field {
+			if ptr != 0 {
+				for _, tf := range resolveTypedef(f.Type.(*godwarf.PtrType).Type).(*godwarf.StructType).Field {
 					switch tf.Name {
 					case "Type":
 						// +rtype *internal/abi.Type
-						_type = newVariable("", uint64(tab.Addr.Add(tf.ByteOffset)), tf.Type, s.bi, tab.mem)
+						_type = newVariable("", uint64(Address(ptr).Add(tf.ByteOffset)), tf.Type, s.bi, proc.DereferenceMemory(v.mem))
 					case "_type":
 						// +rtype *_type|*internal/abi.Type
-						_type = newVariable("", uint64(tab.Addr.Add(tf.ByteOffset)), tf.Type, s.bi, tab.mem)
+						_type = newVariable("", uint64(Address(ptr).Add(tf.ByteOffset)), tf.Type, s.bi, proc.DereferenceMemory(v.mem))
 					}
 				}
 				if _type == nil {
@@ -187,8 +186,7 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 }
 
 func (v *ReferenceVariable) clone() *ReferenceVariable {
-	r := *v
-	return &r
+	return newReferenceVariable(v.Addr, v.Name, v.RealType, v.mem, v.hb)
 }
 
 func ToReferenceVariable(v *proc.Variable) *ReferenceVariable {

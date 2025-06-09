@@ -72,8 +72,8 @@ func newVariable(name string, addr uint64, dwarfType godwarf.Type, bi *proc.Bina
 // keep sync with github.com/go-delve/delve/pkg/proc/functionExtra
 type functionExtra struct {
 	closureStructType *godwarf.StructType
-	rangeParent       *proc.Function
-	rangeBodies       []*proc.Function
+	// rangeParent       *proc.Function
+	// rangeBodies       []*proc.Function
 }
 
 func uint64s2str(us []uint64) string {
