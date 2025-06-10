@@ -85,10 +85,16 @@ func genericString() string {
 	return SliceByteToString(ss)
 }
 
+type toFin struct {
+	a [1000]*int64
+	b *toFin
+}
+
 func finalizing() {
-	toFin := [1000]*int64{}
+	f := &toFin{a: [1000]*int64{}}
+	f.b = f
 	toFin2 := [1000]*int64{}
-	runtime.SetFinalizer(&toFin, func(*[1000]*int64) {
+	runtime.SetFinalizer(f, func(*toFin) {
 		println(toFin2[0])
 	})
 }
@@ -237,7 +243,12 @@ var (
 )
 
 func main() {
-	a := int64(12313)
-	b := genericString()
-	incall(&a, &b)
+	for i := 0; i < 1000; i++ {
+		go func() {
+			a := int64(12313)
+			b := genericString()
+			incall(&a, &b)
+		}()
+	}
+	time.Sleep(10000 * time.Second)
 }

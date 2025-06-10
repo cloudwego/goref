@@ -20,11 +20,18 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"sync"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/go-delve/delve/pkg/logflags"
 	"github.com/go-delve/delve/pkg/proc"
 )
+
+var rvpool = sync.Pool{
+	New: func() interface{} {
+		return &ReferenceVariable{}
+	},
+}
 
 // ReferenceVariable represents a variable. It contains the address, name,
 // type and other information parsed from both the Dwarf information
@@ -45,7 +52,9 @@ type ReferenceVariable struct {
 }
 
 func newReferenceVariable(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator) *ReferenceVariable {
-	return &ReferenceVariable{Addr: addr, Name: name, RealType: typ, mem: mem, hb: hb}
+	rv := rvpool.Get().(*ReferenceVariable)
+	rv.Addr, rv.Name, rv.RealType, rv.mem, rv.hb, rv.size, rv.count = addr, name, typ, mem, hb, 0, 0
+	return rv
 }
 
 func newReferenceVariableWithSizeAndCount(addr Address, name string, typ godwarf.Type, mem proc.MemoryReadWriter, hb *gcMaskBitIterator, size, count int64) *ReferenceVariable {
@@ -152,16 +161,15 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 				continue
 			}
 			// +rtype *itab|*internal/abi.ITab
-			tab := newReferenceVariable(Address(ptr), "", resolveTypedef(f.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(v.mem), nil)
-			if tab.Addr != 0 {
-				for _, tf := range tab.RealType.(*godwarf.StructType).Field {
+			if ptr != 0 {
+				for _, tf := range resolveTypedef(f.Type.(*godwarf.PtrType).Type).(*godwarf.StructType).Field {
 					switch tf.Name {
 					case "Type":
 						// +rtype *internal/abi.Type
-						_type = newVariable("", uint64(tab.Addr.Add(tf.ByteOffset)), tf.Type, s.bi, tab.mem)
+						_type = newVariable("", uint64(Address(ptr).Add(tf.ByteOffset)), tf.Type, s.bi, proc.DereferenceMemory(v.mem))
 					case "_type":
 						// +rtype *_type|*internal/abi.Type
-						_type = newVariable("", uint64(tab.Addr.Add(tf.ByteOffset)), tf.Type, s.bi, tab.mem)
+						_type = newVariable("", uint64(Address(ptr).Add(tf.ByteOffset)), tf.Type, s.bi, proc.DereferenceMemory(v.mem))
 					}
 				}
 				if _type == nil {
@@ -178,8 +186,11 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 }
 
 func (v *ReferenceVariable) clone() *ReferenceVariable {
-	r := *v
-	return &r
+	return newReferenceVariable(v.Addr, v.Name, v.RealType, v.mem, v.hb)
+}
+
+func ToReferenceVariable(v *proc.Variable) *ReferenceVariable {
+	return newReferenceVariable(Address(v.Addr), v.Name, v.RealType, getVariableMem(v), nil)
 }
 
 // for special treatment to finalize pointers

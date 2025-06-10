@@ -23,7 +23,6 @@ import (
 	"regexp"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
-	"github.com/go-delve/delve/pkg/dwarf/reader"
 	"github.com/go-delve/delve/pkg/logflags"
 	"github.com/go-delve/delve/pkg/proc"
 )
@@ -37,10 +36,8 @@ import (
 // so we need to name the sub objects as subObjectsName to display them correctly.
 const subObjectsName = "$sub_objects$"
 
-var (
-	// the max reference depth shown by pprof
-	maxRefDepth = 256
-)
+// the max reference depth shown by pprof
+var maxRefDepth = 256
 
 func SetMaxRefDepth(depth int) {
 	maxRefDepth = depth
@@ -207,6 +204,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			// flatten reference
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	case *godwarf.ChanType:
 		var ptrval uint64
@@ -238,7 +236,9 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 				_ = s.findRef(z, idx)
 				x.size += z.size
 				x.count += z.count
+				rvpool.Put(z)
 			}
+			rvpool.Put(y)
 		}
 	case *godwarf.MapType:
 		var ptrval uint64
@@ -257,6 +257,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 						if err := s.findRef(key, idx); errors.Is(err, errOutOfRange) {
 							continue
 						}
+						rvpool.Put(key)
 					}
 					// find val ref
 					if val := it.value(); val != nil {
@@ -264,6 +265,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 						if err := s.findRef(val, idx); errors.Is(err, errOutOfRange) {
 							continue
 						}
+						rvpool.Put(val)
 					}
 				}
 			}
@@ -279,6 +281,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 				x.size += size
 				x.count += count
 			}
+			rvpool.Put(y)
 		}
 	case *godwarf.StringType:
 		var strAddr, strLen uint64
@@ -290,6 +293,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	case *godwarf.SliceType:
 		var base, cap_ uint64
@@ -308,6 +312,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	case *godwarf.InterfaceType:
 		_type, data := s.readInterface(x)
@@ -335,6 +340,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 				}
 			}
 		}
+		rvpool.Put(data)
 		if ityp == nil {
 			ityp = new(godwarf.VoidType)
 		}
@@ -342,12 +348,15 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	case *godwarf.StructType:
 		typ = s.specialStructTypes(typ)
 		for _, field := range typ.Field {
 			y := x.toField(field)
-			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
+			err = s.findRef(y, idx)
+			rvpool.Put(y)
+			if errors.Is(err, errOutOfRange) {
 				break
 			}
 		}
@@ -358,7 +367,9 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		}
 		for i := int64(0); i < typ.Count; i++ {
 			y := x.arrayAccess(i)
-			if err = s.findRef(y, idx); errors.Is(err, errOutOfRange) {
+			err = s.findRef(y, idx)
+			rvpool.Put(y)
+			if errors.Is(err, errOutOfRange) {
 				break
 			}
 		}
@@ -373,7 +384,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		funcAddr, err = readUintRaw(proc.DereferenceMemory(x.mem), closureAddr, int64(s.bi.Arch.PtrSize()))
 		if err == nil && funcAddr != 0 {
 			if fn := s.bi.PCToFunc(funcAddr); fn != nil {
-				cst = s.closureStructType(fn)
+				cst = funcExtra(fn, s.bi).closureStructType
 			}
 		}
 		if cst == nil {
@@ -383,61 +394,18 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			_ = s.findRef(closure, idx)
 			x.size += closure.size
 			x.count += closure.count
+			rvpool.Put(closure)
 		}
 	case *finalizePtrType:
 		if y := s.findObject(x.Addr, new(godwarf.VoidType), x.mem); y != nil {
 			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
+			rvpool.Put(y)
 		}
 	default:
 	}
 	return
-}
-
-func (s *ObjRefScope) closureStructType(fn *proc.Function) *godwarf.StructType {
-	var fe funcExtra
-	if fe = s.funcExtraMap[fn]; fe.closureStructType != nil {
-		return fe.closureStructType
-	}
-	image := funcToImage(s.bi, fn)
-	dwarfTree, err := getDwarfTree(image, getFunctionOffset(fn))
-	if err != nil {
-		return nil
-	}
-	st := &godwarf.StructType{
-		Kind: "struct",
-	}
-	vars := reader.Variables(dwarfTree, 0, 0, reader.VariablesNoDeclLineCheck|reader.VariablesSkipInlinedSubroutines)
-	for _, v := range vars {
-		off, ok := v.Val(godwarf.AttrGoClosureOffset).(int64)
-		if ok {
-			n, typ, err := readVarEntry(v.Tree, image)
-			if err == nil {
-				if len(n) > 0 && n[0] == '&' {
-					// escaped variables
-					n = n[1:]
-				}
-				sz := typ.Common().ByteSize
-				st.Field = append(st.Field, &godwarf.StructField{
-					Name:       n,
-					Type:       typ,
-					ByteOffset: off,
-					ByteSize:   sz,
-					BitOffset:  off * 8,
-					BitSize:    sz * 8,
-				})
-			}
-		}
-	}
-
-	if len(st.Field) > 0 {
-		lf := st.Field[len(st.Field)-1]
-		st.ByteSize = lf.ByteOffset + lf.Type.Common().ByteSize
-	}
-	fe.closureStructType = st
-	s.funcExtraMap[fn] = fe
-	return st
 }
 
 var (
@@ -508,7 +476,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 		return err
 	}
 
-	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope, funcExtraMap: make(map[*proc.Function]funcExtra)}
+	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope}
 	err = heapScope.readHeap()
 	if err != nil {
 		return err
@@ -524,7 +492,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 		pb:        newProfileBuilder(f),
 	}
 
-	mds, err := proc.LoadModuleData(t.BinInfo(), t.Memory())
+	mds, err := getModuleData(t.BinInfo(), t.Memory())
 	if err != nil {
 		return err
 	}
@@ -536,7 +504,9 @@ func ObjectReference(t *proc.Target, filename string) error {
 		if pv.Addr == 0 {
 			continue
 		}
-		s.findRef(newReferenceVariable(Address(pv.Addr), pv.Name, pv.RealType, t.Memory(), nil), nil)
+		rv := ToReferenceVariable(pv)
+		s.findRef(rv, nil)
+		rvpool.Put(rv)
 	}
 
 	// Local variables
@@ -552,8 +522,8 @@ func ObjectReference(t *proc.Target, filename string) error {
 		s.g.init(Address(lo), Address(hi), s.stackPtrMask(Address(lo), Address(hi), sf))
 		if len(sf) > 0 {
 			for i := range sf {
-				ms := myEvalScope{EvalScope: *proc.FrameToScope(t, t.Memory(), gr, threadID, sf[i:]...)}
-				locals, err := ms.Locals(t, gr, threadID, mds)
+				es := proc.FrameToScope(t, t.Memory(), gr, threadID, sf[i:]...)
+				locals, err := es.Locals(0, "")
 				if err != nil {
 					logflags.DebuggerLogger().Warnf("local variables err: %v", err)
 					continue
@@ -562,12 +532,10 @@ func ObjectReference(t *proc.Target, filename string) error {
 					if l.Addr == 0 {
 						continue
 					}
-					if l.Name[0] == '&' {
-						// escaped variables
-						l.Name = l.Name[1:]
-					}
 					l.Name = sf[i].Current.Fn.Name + "." + l.Name
-					s.findRef(l, nil)
+					rv := ToReferenceVariable(l)
+					s.findRef(rv, nil)
+					rvpool.Put(rv)
 				}
 			}
 		}
@@ -602,9 +570,13 @@ func ObjectReference(t *proc.Target, filename string) error {
 	// Finalizers
 	for _, fin := range heapScope.finalizers {
 		// scan object
-		s.findRef(newReferenceVariable(fin.p, "runtime.SetFinalizer.obj", new(finalizePtrType), s.mem, nil), nil)
+		rv := newReferenceVariable(fin.p, "runtime.SetFinalizer.obj", new(finalizePtrType), s.mem, nil)
+		s.findRef(rv, nil)
+		rvpool.Put(rv)
 		// scan finalizer
-		s.findRef(newReferenceVariable(fin.fn, "runtime.SetFinalizer.fn", new(godwarf.FuncType), s.mem, nil), nil)
+		rv = newReferenceVariable(fin.fn, "runtime.SetFinalizer.fn", new(godwarf.FuncType), s.mem, nil)
+		s.findRef(rv, nil)
+		rvpool.Put(rv)
 	}
 
 	for _, param := range s.finalMarks {
