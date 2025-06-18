@@ -325,3 +325,15 @@ func CeilDivide(n, d int64) int64 {
 	}
 	return r
 }
+
+func CeilDivide2(n, d1, d2 int64) int64 {
+	r1 := n / d1
+	if n%d1 > 0 {
+		r1++
+	}
+	r2 := r1 / d2
+	if r1%d2 > 0 {
+		r2++
+	}
+	return r2
+}
