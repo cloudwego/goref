@@ -62,7 +62,7 @@ type segment struct {
 
 func (s *segment) init(start, end Address, ptrMask []uint64) {
 	s.gcMaskBitIterator = *newGCBitsIterator(start, end, start, ptrMask)
-	s.visitMask = make([]uint64, CeilDivide(int64((end-start)/8), 64))
+	s.visitMask = make([]uint64, CeilDivide2(int64(end-start), 8, 64))
 }
 
 func (s *segment) mark(addr Address) (success bool) {
@@ -109,7 +109,7 @@ type stack struct {
 
 func (s *stack) init(start, end Address, frames []*framePointerMask) {
 	s.start, s.end = start, end
-	s.visitMask = make([]uint64, CeilDivide(int64((end-start)/8), 64))
+	s.visitMask = make([]uint64, CeilDivide2(int64(end-start), 8, 64))
 	s.frames = frames
 }
 
@@ -216,7 +216,7 @@ func (s *HeapScope) readAllSpans(allspans *region, spanInUse, kindSpecialFinaliz
 		if st.Uint8() != spanInUse {
 			continue
 		}
-		maskLen := CeilDivide(spanSize/8, 64)
+		maskLen := CeilDivide2(spanSize, 8, 64)
 		spi := &spanInfo{
 			base: base, elemSize: elemSize, spanSize: spanSize,
 			visitMask: make([]uint64, maskLen), ptrMask: make([]uint64, maskLen),
@@ -533,7 +533,7 @@ func (s *HeapScope) parseSegment(name string, md *region) *segment {
 	minAddr := Address(md.Field(name).Uintptr())
 	maxAddr := Address(md.Field("e" + name).Uintptr())
 	gcmask := md.Field("gc" + name + "mask").Field("bytedata").Address()
-	ptrNum := int64((maxAddr - minAddr) / 8)
+	ptrNum := CeilDivide(int64(maxAddr-minAddr), 8)
 	ptrMask := make([]uint64, CeilDivide(ptrNum, 64))
 	data := make([]byte, int(ptrNum/8))
 	_, err := s.mem.ReadMemory(data, uint64(gcmask))
@@ -565,7 +565,7 @@ func (s *HeapScope) stackPtrMask(start, end Address, frames []proc.Stackframe) [
 			// skip inlined frame to report the name of the caller function
 			continue
 		}
-		ptrMask := make([]uint64, CeilDivide(fp.Sub(sp)/8, 64))
+		ptrMask := make([]uint64, CeilDivide2(fp.Sub(sp), 8, 64))
 		for i := range ptrMask {
 			ptrMask[i] = ^uint64(0)
 		}
