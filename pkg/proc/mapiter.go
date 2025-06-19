@@ -345,20 +345,6 @@ func (it *mapIteratorClassic) value() *ReferenceVariable {
 func (it *mapIteratorClassic) kv(v *ReferenceVariable) *ReferenceVariable {
 	v.RealType = resolveTypedef(v.RealType.(*godwarf.ArrayType).Type)
 	v.Addr = v.Addr.Add(v.RealType.Size() * (it.idx - 1))
-	if v.hb != nil {
-		// limit heap bits to a single value
-		base, end := v.hb.base, v.hb.end
-		if base < v.Addr {
-			base = v.Addr
-		}
-		if end > v.Addr.Add(v.RealType.Size()) {
-			end = v.Addr.Add(v.RealType.Size())
-		}
-		if base >= end {
-			return nil
-		}
-		v.hb = newGCBitsIterator(base, end, v.hb.maskBase, v.hb.mask)
-	}
 	return v
 }
 
