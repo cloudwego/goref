@@ -69,6 +69,16 @@ func getModuleData(bi *proc.BinaryInfo, mem proc.MemoryReadWriter) ([]proc.Modul
 //go:linkname newVariable github.com/go-delve/delve/pkg/proc.newVariable
 func newVariable(name string, addr uint64, dwarfType godwarf.Type, bi *proc.BinaryInfo, mem proc.MemoryReadWriter) *proc.Variable
 
+// keep sync with github.com/go-delve/delve/pkg/proc/mapIterator
+type mapIteratorIface interface {
+	next() bool
+	key() *proc.Variable
+	value() *proc.Variable
+}
+
+//go:linkname toMapIterator github.com/go-delve/delve/pkg/proc.(*Variable).mapIterator
+func toMapIterator(v *proc.Variable, maxNumBuckets uint64) mapIteratorIface
+
 // keep sync with github.com/go-delve/delve/pkg/proc/functionExtra
 type functionExtra struct {
 	closureStructType *godwarf.StructType
