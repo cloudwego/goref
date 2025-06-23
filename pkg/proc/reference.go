@@ -247,12 +247,11 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			return
 		}
 		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
-			var it mapIterator
-			it, err = s.toMapIterator(y, typ.KeyType, typ.ElemType)
-			if err == nil {
-				for it.next(s) {
+			if it := toMapIterator(x.ToDelveVariable(s.bi), 0); it != nil {
+				for it.next() {
 					// find key ref
-					if key := it.key(); key != nil {
+					if k := it.key(); k != nil {
+						key := ToReferenceVariable(k)
 						key.Name = "$mapkey. (" + key.RealType.String() + ")"
 						if err := s.findRef(key, idx); errors.Is(err, errOutOfRange) {
 							continue
@@ -260,7 +259,8 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 						rvpool.Put(key)
 					}
 					// find val ref
-					if val := it.value(); val != nil {
+					if v := it.value(); v != nil {
+						val := ToReferenceVariable(v)
 						val.Name = "$mapval. (" + val.RealType.String() + ")"
 						if err := s.findRef(val, idx); errors.Is(err, errOutOfRange) {
 							continue
@@ -269,18 +269,14 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 					}
 				}
 			}
-			if it != nil {
-				// avoid missing memory
-				objects, size, count := it.referenceInfo()
-				for _, obj := range objects {
-					if obj.hb.nextPtr(false) != 0 {
-						// still has pointer, add to the finalMarks
-						s.finalMarks = append(s.finalMarks, finalMarkParam{idx.pushHead(s.pb, subObjectsName), obj.hb})
-					}
-				}
-				x.size += size
-				x.count += count
+			if y.hb.nextPtr(false) != 0 {
+				// The internal structure of hmap contains complex object reference relationships.
+				// Key value traversal can only display the real business k/v objects referenced externally,
+				// but cannot count the memory referenced inside hmap, so object y must be scanned again.
+				s.finalMarks = append(s.finalMarks, finalMarkParam{idx, y.hb})
 			}
+			x.size += y.size
+			x.count += y.count
 			rvpool.Put(y)
 		}
 	case *godwarf.StringType:

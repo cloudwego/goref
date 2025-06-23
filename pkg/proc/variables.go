@@ -27,6 +27,16 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
+// The kind field in runtime._type is a reflect.Kind value plus
+// some extra flags defined here.
+// See equivalent declaration in $GOROOT/src/reflect/type.go
+const (
+	kindDirectIface = 1 << 5 // +rtype kindDirectIface|internal/abi.KindDirectIface
+	kindGCProg      = 1 << 6 // +rtype kindGCProg|internal/abi.KindGCProg
+	kindNoPointers  = 1 << 7
+	kindMask        = (1 << 5) - 1 // +rtype kindMask|internal/abi.KindMask
+)
+
 var rvpool = sync.Pool{
 	New: func() interface{} {
 		return &ReferenceVariable{}
@@ -191,6 +201,10 @@ func (v *ReferenceVariable) clone() *ReferenceVariable {
 
 func ToReferenceVariable(v *proc.Variable) *ReferenceVariable {
 	return newReferenceVariable(Address(v.Addr), v.Name, v.RealType, getVariableMem(v), nil)
+}
+
+func (v *ReferenceVariable) ToDelveVariable(bi *proc.BinaryInfo) *proc.Variable {
+	return newVariable(v.Name, uint64(v.Addr), v.RealType, bi, v.mem)
 }
 
 // for special treatment to finalize pointers
