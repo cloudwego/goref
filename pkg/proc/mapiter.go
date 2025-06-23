@@ -419,6 +419,7 @@ var (
 	errSwissMapBadType         = errors.New("swiss table type does not have some required fields")
 	errSwissMapBadTableField   = errors.New("swiss table bad table field")
 	errSwissMapBadGroupTypeErr = errors.New("bad swiss map type, group type lacks some required fields")
+	errSwissTableNilGroups     = errors.New("bad swiss map, groups pointer is nil")
 )
 
 // loadTypes determines the correct type for it.dirPtr:  the linker records
@@ -654,11 +655,13 @@ func (it *mapIteratorSwiss) loadCurrentTable(s *ObjRefScope) (err error) {
 	// convert the type of groups from *group to *[len]group so that it's easier to use
 	r.groups.RealType = pointerTo(fakeArrayType(groupsLengthMask+1, it.groupType), it.bi.Arch)
 	r.groups = r.groups.dereference(s)
-	if r.groups != nil {
-		it.size += r.groups.size
-		it.count += r.groups.count
-		it.objects = append(it.objects, r.groups)
+	if r.groups == nil {
+		return errSwissTableNilGroups
 	}
+
+	it.size += r.groups.size
+	it.count += r.groups.count
+	it.objects = append(it.objects, r.groups)
 
 	it.tab = r
 	return nil
