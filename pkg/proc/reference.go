@@ -578,6 +578,13 @@ func ObjectReference(t *proc.Target, filename string) error {
 		s.findRef(rv, nil)
 		rvpool.Put(rv)
 	}
+	// CleanUps
+	for _, clu := range heapScope.cleanUps {
+		// scan cleanUp
+		rv := newReferenceVariable(clu.fn, "runtime.AddCleanup.fn", new(godwarf.FuncType), s.mem, nil)
+		s.findRef(rv, nil)
+		rvpool.Put(rv)
+	}
 
 	for _, param := range s.finalMarks {
 		s.finalMark(param.idx, param.hb)
