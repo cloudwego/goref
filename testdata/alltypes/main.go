@@ -86,17 +86,29 @@ func genericString() string {
 }
 
 type toFin struct {
-	a [1000]*int64
+	a [1000]int64
 	b *toFin
 }
 
 func finalizing() {
-	f := &toFin{a: [1000]*int64{}}
-	f.b = f
-	toFin2 := [1000]*int64{}
-	runtime.SetFinalizer(f, func(*toFin) {
-		println(toFin2[0])
+	f := &toFin{}
+	f.b = &toFin{
+		b: f,
+	}
+	fin := &toFin{}
+	runtime.SetFinalizer(f.b, func(*toFin) {
+		println(fin.a[0])
 	})
+}
+
+func cleanup() *toFin {
+	f := &toFin{}
+	cleanup := &toFin{}
+	cleanup1 := &toFin{}
+	runtime.AddCleanup(f, func(s *toFin) {
+		println(cleanup1.a[0])
+	}, cleanup)
+	return f
 }
 
 func initMap(n int) map[string]string {
@@ -219,6 +231,8 @@ func incall(a *int64, b *string) (res *Request) {
 
 	finalizing()
 
+	cl := cleanup()
+
 	time.Sleep(10000 * time.Second)
 
 	go func() { nnext() }()
@@ -226,6 +240,7 @@ func incall(a *int64, b *string) (res *Request) {
 	_ = reqqq
 	_ = bbbb
 
+	runtime.KeepAlive(cl)
 	runtime.KeepAlive(req)
 	runtime.KeepAlive(ireq)
 	escape(req, str, reqI, reqE, bbbb)

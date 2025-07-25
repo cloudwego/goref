@@ -147,6 +147,7 @@ type HeapScope struct {
 	arenaInfo []*[]*[]*spanInfo
 
 	finalizers []finalizer
+	cleanups   []cleanup
 
 	mds []proc.ModuleData
 
@@ -179,12 +180,13 @@ func (s *HeapScope) readHeap() error {
 	s.heapArenaBytes = s.rtConstant("heapArenaBytes")
 	s.pagesPerArena = s.heapArenaBytes / s.pageSize
 	kindSpecialFinalizer := uint8(s.rtConstant("_KindSpecialFinalizer"))
+	kindSpecialCleanup := uint8(s.rtConstant("_KindSpecialCleanup"))
 	s.arenaBaseOffset = s.getArenaBaseOffset()
 	s.arenaL1Bits, s.arenaL2Bits = s.rtConstant("arenaL1Bits"), s.rtConstant("arenaL2Bits")
 	s.minSizeForMallocHeader = s.rtConstant("minSizeForMallocHeader")
 
 	// start read all spans
-	spans, spanInfos := s.readAllSpans(mheap.Field("allspans").Array(), spanInUse, kindSpecialFinalizer)
+	spans, spanInfos := s.readAllSpans(mheap.Field("allspans").Array(), spanInUse, kindSpecialFinalizer, kindSpecialCleanup)
 
 	// start read arenas
 	if !s.readArenas(mheap) {
@@ -196,10 +198,13 @@ func (s *HeapScope) readHeap() error {
 	return s.readModuleData()
 }
 
-func (s *HeapScope) readAllSpans(allspans *region, spanInUse, kindSpecialFinalizer uint8) (spans []*region, spanInfos []*spanInfo) {
+func (s *HeapScope) readAllSpans(allspans *region, spanInUse, kindSpecialFinalizer, kindSpecialCleanup uint8) (spans []*region, spanInfos []*spanInfo) {
 	// read all spans
 	n := allspans.ArrayLen()
 	to := &region{}
+	// finalizer / cleanup type
+	fintyp, _ := findType(s.bi, "runtime.specialfinalizer")
+	clutyp, _ := findType(s.bi, "runtime.specialCleanup")
 	for i := int64(0); i < n; i++ {
 		allspans.ArrayIndex(i, to)
 		sp := to.Deref()
@@ -225,7 +230,7 @@ func (s *HeapScope) readAllSpans(allspans *region, spanInUse, kindSpecialFinaliz
 		for addr := base; addr < max; addr = addr.Add(s.pageSize) {
 			s.allocSpan(addr, spi)
 		}
-		if err := s.addSpecial(sp, spi, kindSpecialFinalizer); err != nil {
+		if err := s.addSpecial(sp, spi, fintyp, clutyp, kindSpecialFinalizer, kindSpecialCleanup); err != nil {
 			logflags.DebuggerLogger().Errorf("%v", err)
 		}
 		// for go 1.22 with allocation header
@@ -588,34 +593,49 @@ type finalizer struct {
 	fn Address // finalizer function, always 8 bytes
 }
 
-func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, kindSpecialFinalizer uint8) error {
+type cleanup struct {
+	fn Address // cleanup function, always 8 bytes
+}
+
+func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, fintyp, clutyp godwarf.Type, kindSpecialFinalizer, kindSpecialCleanup uint8) error {
 	// Process special records.
-	spty, _ := findType(s.bi, "runtime.specialfinalizer")
 	for special := sp.Field("specials"); special.Address() != 0; special = special.Field("next") {
 		special = special.Deref() // *special to special
-		if special.Field("kind").Uint8() != kindSpecialFinalizer {
-			// All other specials (just profile records) can't point into the heap.
-			continue
-		}
-		var fin finalizer
-		if s.specialOffsetUintptrType == 0 {
-			if t, ok := special.Field("offset").typ.(*godwarf.UintType); ok && t.Size() == 8 {
-				s.specialOffsetUintptrType = 1
-			} else {
-				s.specialOffsetUintptrType = 2
+		switch special.Field("kind").Uint8() {
+		case kindSpecialFinalizer:
+			var fin finalizer
+			if s.specialOffsetUintptrType == 0 {
+				if t, ok := special.Field("offset").typ.(*godwarf.UintType); ok && t.Size() == 8 {
+					s.specialOffsetUintptrType = 1
+				} else {
+					s.specialOffsetUintptrType = 2
+				}
 			}
+			var p Address
+			if s.specialOffsetUintptrType == 1 {
+				p = spi.base.Add(int64(special.Field("offset").Uintptr()) / spi.elemSize * spi.elemSize)
+			} else {
+				p = spi.base.Add(int64(special.Field("offset").Uint16()) / spi.elemSize * spi.elemSize)
+			}
+			fin.p = p
+			spf := *special
+			spf.typ = fintyp
+			fin.fn = spf.Field("fn").a
+			s.finalizers = append(s.finalizers, fin)
+		case kindSpecialCleanup:
+			if kindSpecialCleanup == 0 {
+				// not support cleanup before go 1.24
+				continue
+			}
+			var clu cleanup
+			spf := *special
+			spf.typ = clutyp
+			clu.fn = spf.Field("fn").a
+			s.cleanups = append(s.cleanups, clu)
+		default:
+			// WeakHandle may have an 8-byte pointer stored in the heap,
+			// but usually it doesn't occupy too much memory, so it is ignored.
 		}
-		var p Address
-		if s.specialOffsetUintptrType == 1 {
-			p = spi.base.Add(int64(special.Field("offset").Uintptr()) / spi.elemSize * spi.elemSize)
-		} else {
-			p = spi.base.Add(int64(special.Field("offset").Uint16()) / spi.elemSize * spi.elemSize)
-		}
-		fin.p = p
-		spf := *special
-		spf.typ = spty
-		fin.fn = spf.Field("fn").a
-		s.finalizers = append(s.finalizers, fin)
 	}
 	return nil
 }
