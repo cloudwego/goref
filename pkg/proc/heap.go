@@ -147,7 +147,7 @@ type HeapScope struct {
 	arenaInfo []*[]*[]*spanInfo
 
 	finalizers []finalizer
-	cleanUps   []cleanUp
+	cleanups   []cleanup
 
 	mds []proc.ModuleData
 
@@ -593,8 +593,8 @@ type finalizer struct {
 	fn Address // finalizer function, always 8 bytes
 }
 
-type cleanUp struct {
-	fn Address // cleanUp function, always 8 bytes
+type cleanup struct {
+	fn Address // cleanup function, always 8 bytes
 }
 
 func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, fintyp, clutyp godwarf.Type, kindSpecialFinalizer, kindSpecialCleanup uint8) error {
@@ -627,11 +627,11 @@ func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, fintyp, clutyp godwarf
 				// not support cleanup before go 1.24
 				continue
 			}
-			var clu cleanUp
+			var clu cleanup
 			spf := *special
 			spf.typ = clutyp
 			clu.fn = spf.Field("fn").a
-			s.cleanUps = append(s.cleanUps, clu)
+			s.cleanups = append(s.cleanups, clu)
 		default:
 			// WeakHandle may have an 8-byte pointer stored in the heap,
 			// but usually it doesn't occupy too much memory, so it is ignored.

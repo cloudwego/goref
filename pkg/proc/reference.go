@@ -510,6 +510,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 	}
 
 	// Local variables
+	var allgs []*stack
 	threadID := t.CurrentThread().ThreadID()
 	grs, _, _ := proc.GoroutinesInfo(t, 0, 0)
 	for _, gr := range grs {
@@ -539,32 +540,8 @@ func ObjectReference(t *proc.Target, filename string) error {
 				}
 			}
 		}
-		// scan root gc bits in case dwarf searching failure
-		for _, fr := range s.g.frames {
-			it := &(fr.gcMaskBitIterator)
-			if it.nextPtr(false) != 0 {
-				// add to the finalMarks
-				idx := (*pprofIndex)(nil).pushHead(s.pb, fr.funcName)
-				s.finalMarks = append(s.finalMarks, finalMarkParam{idx, it})
-			}
-		}
-	}
-	s.g = nil
-
-	// final mark segment root bits
-	for i, seg := range s.bss {
-		it := &(seg.gcMaskBitIterator)
-		if it.nextPtr(false) != 0 {
-			idx := (*pprofIndex)(nil).pushHead(s.pb, fmt.Sprintf("bss segment[%d]", i))
-			s.finalMarks = append(s.finalMarks, finalMarkParam{idx, it})
-		}
-	}
-	for i, seg := range s.data {
-		it := &(seg.gcMaskBitIterator)
-		if it.nextPtr(false) != 0 {
-			idx := (*pprofIndex)(nil).pushHead(s.pb, fmt.Sprintf("data segment[%d]", i))
-			s.finalMarks = append(s.finalMarks, finalMarkParam{idx, it})
-		}
+		allgs = append(allgs, s.g)
+		s.g = nil
 	}
 
 	// Finalizers
@@ -578,16 +555,48 @@ func ObjectReference(t *proc.Target, filename string) error {
 		s.findRef(rv, nil)
 		rvpool.Put(rv)
 	}
-	// CleanUps
-	for _, clu := range heapScope.cleanUps {
-		// scan cleanUp
+	// Cleanups
+	for _, clu := range heapScope.cleanups {
+		// scan cleanup
 		rv := newReferenceVariable(clu.fn, "runtime.AddCleanup.fn", new(godwarf.FuncType), s.mem, nil)
 		s.findRef(rv, nil)
 		rvpool.Put(rv)
 	}
 
+	// final mark with gc mask bits
 	for _, param := range s.finalMarks {
 		s.finalMark(param.idx, param.hb)
+	}
+	s.finalMarks = nil
+
+	for _, g := range allgs {
+		// scan root gc bits in case dwarf searching failure
+		for i, fr := range g.frames {
+			it := &(fr.gcMaskBitIterator)
+			if it.nextPtr(false) != 0 {
+				var idx *pprofIndex
+				for j := len(g.frames) - 1; j >= i; j-- {
+					idx = idx.pushHead(s.pb, g.frames[j].funcName)
+				}
+				s.finalMark(idx, it)
+			}
+		}
+	}
+
+	// final mark segment root bits
+	for i, seg := range s.bss {
+		it := &(seg.gcMaskBitIterator)
+		if it.nextPtr(false) != 0 {
+			idx := (*pprofIndex)(nil).pushHead(s.pb, fmt.Sprintf("bss segment[%d]", i))
+			s.finalMark(idx, it)
+		}
+	}
+	for i, seg := range s.data {
+		it := &(seg.gcMaskBitIterator)
+		if it.nextPtr(false) != 0 {
+			idx := (*pprofIndex)(nil).pushHead(s.pb, fmt.Sprintf("data segment[%d]", i))
+			s.finalMark(idx, it)
+		}
 	}
 
 	s.pb.flush()

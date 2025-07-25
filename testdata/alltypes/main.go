@@ -92,20 +92,22 @@ type toFin struct {
 
 func finalizing() {
 	f := &toFin{}
-	f.b = f
+	f.b = &toFin{
+		b: f,
+	}
 	fin := &toFin{}
-	runtime.SetFinalizer(f, func(*toFin) {
+	runtime.SetFinalizer(f.b, func(*toFin) {
 		println(fin.a[0])
 	})
 }
 
 func cleanup() *toFin {
 	f := &toFin{}
-	cleanUp := &toFin{}
-	cleanUp1 := &toFin{}
+	cleanup := &toFin{}
+	cleanup1 := &toFin{}
 	runtime.AddCleanup(f, func(s *toFin) {
-		println(cleanUp1.a[0])
-	}, cleanUp)
+		println(cleanup1.a[0])
+	}, cleanup)
 	return f
 }
 
