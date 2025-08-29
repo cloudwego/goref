@@ -15,6 +15,7 @@
 package proc
 
 import (
+	"debug/dwarf"
 	"errors"
 	"fmt"
 	"log"
@@ -545,7 +546,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 	s.mds = mds
 
 	// Global variables
-	pvs, _ := scope.PackageVariables(loadSingleValue)
+	pvs, _ := s.PackageVariables(t)
 	for _, pv := range pvs {
 		if pv.Addr == 0 {
 			continue
@@ -648,4 +649,36 @@ func ObjectReference(t *proc.Target, filename string) error {
 	s.pb.flush()
 	log.Printf("successfully output to `%s`\n", filename)
 	return nil
+}
+
+// PackageVariables returns the name, and type of all package variables in the application.
+// TODO: replace it with proc.Target.PackageVariables if delve optimized loadValue cost.
+func (s *HeapScope) PackageVariables(t *proc.Target) (vars []*proc.Variable, err error) {
+	for _, image := range s.bi.Images {
+		reader := image.DwarfReader()
+		for {
+			entry, err := reader.Next()
+			if err != nil {
+				return nil, err
+			}
+			if entry == nil {
+				break
+			}
+			switch entry.Tag {
+			case dwarf.TagVariable:
+				// Ignore errors trying to extract values
+				regs := s.scope.Regs
+				regs.StaticBase = image.StaticBase
+				val, err := extractVarInfoFromEntry(t, s.bi, image, regs, s.mem, godwarf.EntryToTree(entry), 0)
+				if val != nil && val.Kind == reflect.Invalid {
+					continue
+				}
+				if err != nil {
+					continue
+				}
+				vars = append(vars, val)
+			}
+		}
+	}
+	return vars, nil
 }

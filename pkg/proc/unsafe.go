@@ -19,6 +19,7 @@ import (
 	"unsafe"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
+	"github.com/go-delve/delve/pkg/dwarf/op"
 	"github.com/go-delve/delve/pkg/proc"
 	"github.com/modern-go/reflect2"
 )
@@ -80,6 +81,9 @@ func findType(bi *proc.BinaryInfo, name string) (godwarf.Type, error)
 
 //go:linkname getModuleData github.com/go-delve/delve/pkg/proc.(*BinaryInfo).getModuleData
 func getModuleData(bi *proc.BinaryInfo, mem proc.MemoryReadWriter) ([]proc.ModuleData, error)
+
+//go:linkname extractVarInfoFromEntry github.com/go-delve/delve/pkg/proc.extractVarInfoFromEntry
+func extractVarInfoFromEntry(tgt *proc.Target, bi *proc.BinaryInfo, image *proc.Image, regs op.DwarfRegisters, mem proc.MemoryReadWriter, entry *godwarf.Tree, dictAddr uint64) (*proc.Variable, error)
 
 //go:linkname newVariable github.com/go-delve/delve/pkg/proc.newVariable
 func newVariable(name string, addr uint64, dwarfType godwarf.Type, bi *proc.BinaryInfo, mem proc.MemoryReadWriter) *proc.Variable
