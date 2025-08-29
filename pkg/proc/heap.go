@@ -126,6 +126,10 @@ func (s *stack) mark(addr Address) (success bool) {
 	return false
 }
 
+type funcExtra struct {
+	closureStructType *godwarf.StructType // closure struct type only support go 1.23 and later
+}
+
 // HeapScope contains the proc info for this round of scanning.
 type HeapScope struct {
 	// runtime constants
@@ -156,6 +160,8 @@ type HeapScope struct {
 	scope *proc.EvalScope
 
 	finalMarks []finalMarkParam
+
+	funcExtraMap map[*proc.Function]funcExtra
 
 	// for go1.24+, offset field of runtime.special type is uintptr
 	specialOffsetUintptrType uint8 // 0: not sure, 1: uintptr, 2: uint16
