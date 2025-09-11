@@ -148,10 +148,13 @@ func (tf *TestFramework) attachAndAnalyze(pid int, outputFile, binary string) (*
 	}
 	defer dbg.Detach(false)
 
-	target := dbg.Target()
-
 	// Run reference analysis and get the scope for validation
-	scope, err := gorefproc.ObjectReference(target, outputFile)
+	var scope *gorefproc.ObjRefScope
+	func() {
+		tg, unlock := dbg.LockTargetGroup()
+		defer unlock()
+		scope, err = gorefproc.ObjectReference(tg.Selected, outputFile)
+	}()
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze references: %w", err)
 	}

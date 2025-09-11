@@ -126,10 +126,6 @@ func (s *stack) mark(addr Address) (success bool) {
 	return false
 }
 
-type funcExtra struct {
-	closureStructType *godwarf.StructType // closure struct type only support go 1.23 and later
-}
-
 // HeapScope contains the proc info for this round of scanning.
 type HeapScope struct {
 	// runtime constants
@@ -161,8 +157,6 @@ type HeapScope struct {
 
 	finalMarks []finalMarkParam
 
-	funcExtraMap map[*proc.Function]funcExtra
-
 	// for go1.24+, offset field of runtime.special type is uintptr
 	specialOffsetUintptrType uint8 // 0: not sure, 1: uintptr, 2: uint16
 }
@@ -179,10 +173,7 @@ func (s *HeapScope) readHeap() error {
 	mheap := toRegion(tmp, s.bi)
 	// read runtime constants
 	s.pageSize = s.rtConstant("_PageSize")
-	spanInUse := uint8(s.rtConstant("_MSpanInUse"))
-	if spanInUse == 0 {
-		spanInUse = uint8(s.rtConstant("mSpanInUse"))
-	}
+	spanInUse := uint8(s.rtConstant("mSpanInUse"))
 	s.heapArenaBytes = s.rtConstant("heapArenaBytes")
 	s.pagesPerArena = s.heapArenaBytes / s.pageSize
 	kindSpecialFinalizer := uint8(s.rtConstant("_KindSpecialFinalizer"))
@@ -612,7 +603,7 @@ func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, fintyp, clutyp godwarf
 			var fin finalizer
 			if s.specialOffsetUintptrType == 0 {
 				if t, ok := special.Field("offset").typ.(*godwarf.UintType); ok && t.Size() == 8 {
-					s.specialOffsetUintptrType = 1
+					s.specialOffsetUintptrType = 1 // go 1.24+
 				} else {
 					s.specialOffsetUintptrType = 2
 				}

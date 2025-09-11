@@ -343,7 +343,7 @@ func (it *mapIteratorClassic) value() *ReferenceVariable {
 }
 
 func (it *mapIteratorClassic) kv(v *ReferenceVariable) *ReferenceVariable {
-	v.RealType = resolveTypedef(v.RealType.(*godwarf.ArrayType).Type)
+	v.RealType = godwarf.ResolveTypedef(v.RealType.(*godwarf.ArrayType).Type)
 	v.Addr = v.Addr.Add(v.RealType.Size() * (it.idx - 1))
 	return v
 }
@@ -452,7 +452,7 @@ func (it *mapIteratorSwiss) loadTypes(s *ObjRefScope) error {
 						it.groupsFieldData = field
 						typ, ok := field.Type.(*godwarf.PtrType)
 						if ok {
-							it.groupType, _ = resolveTypedef(typ.Type).(*godwarf.StructType)
+							it.groupType, _ = godwarf.ResolveTypedef(typ.Type).(*godwarf.StructType)
 						}
 					case "lengthMask":
 						it.groupsFieldLengthMask = field
@@ -476,7 +476,7 @@ func (it *mapIteratorSwiss) loadTypes(s *ObjRefScope) error {
 		return errSwissMapBadGroupTypeErr
 	}
 
-	slotsType, ok := resolveTypedef(it.groupFieldSlots.Type).(*godwarf.ArrayType)
+	slotsType, ok := godwarf.ResolveTypedef(it.groupFieldSlots.Type).(*godwarf.ArrayType)
 	if !ok {
 		return errSwissMapBadGroupTypeErr
 	}
