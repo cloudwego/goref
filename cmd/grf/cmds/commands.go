@@ -173,7 +173,7 @@ func execute(attachPid int, exeFile, coreFile, outFile string, conf *config.Conf
 		return 1
 	}
 	t := dbg.Target()
-	if err = myproc.ObjectReference(t, outFile); err != nil {
+	if _, err = myproc.ObjectReference(t, outFile); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return 1
 	}

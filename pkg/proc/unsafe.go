@@ -89,7 +89,8 @@ func uint64s2str(us []uint64) string {
 	return unsafe.String((*byte)(p), len(us)*8)
 }
 
-func str2uint64s(s string) []uint64 {
+// Str2uint64s exports str2uint64s for testing purposes
+func Str2uint64s(s string) []uint64 {
 	p := unsafe.Pointer(unsafe.StringData(s))
 	return unsafe.Slice((*uint64)(p), len(s)/8)
 }

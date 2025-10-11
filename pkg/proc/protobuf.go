@@ -230,6 +230,16 @@ type profileNode struct {
 	size  int64
 }
 
+// GetCount returns the object count for testing purposes
+func (n *profileNode) GetCount() int64 {
+	return n.count
+}
+
+// GetSize returns the object size for testing purposes
+func (n *profileNode) GetSize() int64 {
+	return n.size
+}
+
 // newProfileBuilder returns a new profileBuilder.
 // CPU profiling data obtained from the runtime can be added
 // by calling b.addCPUData, and then the eventual profile
@@ -289,7 +299,7 @@ func (b *profileBuilder) addReference(indexes []uint64, count, bytes int64) {
 
 func (b *profileBuilder) flushReference() {
 	for k, node := range b.nodes {
-		indexes := str2uint64s(k)
+		indexes := Str2uint64s(k)
 		start := b.pb.startMessage()
 		b.pb.int64s(tagSample_Value, []int64{node.count, node.size})
 		b.pb.uint64s(tagSample_Location, indexes)
