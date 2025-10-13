@@ -172,8 +172,12 @@ func execute(attachPid int, exeFile, coreFile, outFile string, conf *config.Conf
 		fmt.Fprintln(os.Stderr, err.Error())
 		return 1
 	}
-	t := dbg.Target()
-	if _, err = myproc.ObjectReference(t, outFile); err != nil {
+	func() {
+		tg, unlock := dbg.LockTargetGroup()
+		defer unlock()
+		_, err = myproc.ObjectReference(tg.Selected, outFile)
+	}()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		return 1
 	}

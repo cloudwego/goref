@@ -23,7 +23,6 @@ import (
 	"regexp"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
-	"github.com/go-delve/delve/pkg/dwarf/reader"
 	"github.com/go-delve/delve/pkg/logflags"
 	"github.com/go-delve/delve/pkg/proc"
 )
@@ -81,7 +80,7 @@ func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem proc.Memory
 			// is referencing the memory, so there is no need to scan this object.
 			return
 		}
-		v = newReferenceVariable(addr, "", resolveTypedef(typ), mem, nil)
+		v = newReferenceVariable(addr, "", godwarf.ResolveTypedef(typ), mem, nil)
 		return
 	}
 	// Find mark bit
@@ -96,7 +95,7 @@ func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem proc.Memory
 		// has pointer, cache mem
 		mem = cacheMemory(mem, uint64(base), int(sp.elemSize))
 	}
-	v = newReferenceVariableWithSizeAndCount(addr, "", resolveTypedef(typ), mem, hb, sp.elemSize, 1)
+	v = newReferenceVariableWithSizeAndCount(addr, "", godwarf.ResolveTypedef(typ), mem, hb, sp.elemSize, 1)
 	return
 }
 
@@ -206,7 +205,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		if err != nil {
 			return
 		}
-		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type), proc.DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(ptrval), godwarf.ResolveTypedef(typ.Type), proc.DereferenceMemory(x.mem)); y != nil {
 			_ = s.findRef(y, idx)
 			// flatten reference
 			x.size += y.size
@@ -219,7 +218,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		if err != nil {
 			return
 		}
-		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(ptrval), godwarf.ResolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
 			x.size += y.size
 			x.count += y.count
 
@@ -253,7 +252,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		if err != nil {
 			return
 		}
-		if y := s.findObject(Address(ptrval), resolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(ptrval), godwarf.ResolveTypedef(typ.Type.(*godwarf.PtrType).Type), proc.DereferenceMemory(x.mem)); y != nil {
 			var it mapIterator
 			it, err = s.toMapIterator(y, typ.KeyType, typ.ElemType)
 			if err == nil {
@@ -334,16 +333,16 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		var ityp godwarf.Type
 		if _type != nil {
 			var rtyp godwarf.Type
-			var kind int64
-			rtyp, kind, err = proc.RuntimeTypeToDIE(_type, uint64(data.Addr), s.mds)
+			var directIface bool
+			rtyp, directIface, err = proc.RuntimeTypeToDIE(_type, uint64(data.Addr), s.mds)
 			if err == nil {
-				if kind&kindDirectIface == 0 {
-					if _, isptr := resolveTypedef(rtyp).(*godwarf.PtrType); !isptr {
+				if !directIface {
+					if _, isptr := godwarf.ResolveTypedef(rtyp).(*godwarf.PtrType); !isptr {
 						rtyp = pointerTo(rtyp, s.bi.Arch)
 					}
 				}
-				if ptrType, isPtr := resolveTypedef(rtyp).(*godwarf.PtrType); isPtr {
-					ityp = resolveTypedef(ptrType.Type)
+				if ptrType, isPtr := godwarf.ResolveTypedef(rtyp).(*godwarf.PtrType); isPtr {
+					ityp = godwarf.ResolveTypedef(ptrType.Type)
 				}
 			}
 		}
@@ -368,7 +367,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			}
 		}
 	case *godwarf.ArrayType:
-		eType := resolveTypedef(typ.Type)
+		eType := godwarf.ResolveTypedef(typ.Type)
 		if !hasPtrType(eType) {
 			return
 		}
@@ -391,7 +390,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		funcAddr, err = readUintRaw(proc.DereferenceMemory(x.mem), closureAddr, int64(s.bi.Arch.PtrSize()))
 		if err == nil && funcAddr != 0 {
 			if fn := s.bi.PCToFunc(funcAddr); fn != nil {
-				cst = s.closureStructType(fn)
+				cst = funcExtra(fn, s.bi).closureStructType
 			}
 		}
 		if cst == nil {
@@ -413,51 +412,6 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 	default:
 	}
 	return
-}
-
-func (s *ObjRefScope) closureStructType(fn *proc.Function) *godwarf.StructType {
-	var fe funcExtra
-	if fe = s.funcExtraMap[fn]; fe.closureStructType != nil {
-		return fe.closureStructType
-	}
-	image := funcToImage(s.bi, fn)
-	dwarfTree, err := getDwarfTree(image, getFunctionOffset(fn))
-	if err != nil {
-		return nil
-	}
-	st := &godwarf.StructType{
-		Kind: "struct",
-	}
-	vars := reader.Variables(dwarfTree, 0, 0, reader.VariablesNoDeclLineCheck|reader.VariablesSkipInlinedSubroutines)
-	for _, v := range vars {
-		off, ok := v.Val(godwarf.AttrGoClosureOffset).(int64)
-		if ok {
-			n, typ, err := readVarEntry(v.Tree, image)
-			if err == nil {
-				if len(n) > 0 && n[0] == '&' {
-					// escaped variables
-					n = n[1:]
-				}
-				sz := typ.Common().ByteSize
-				st.Field = append(st.Field, &godwarf.StructField{
-					Name:       n,
-					Type:       typ,
-					ByteOffset: off,
-					ByteSize:   sz,
-					BitOffset:  off * 8,
-					BitSize:    sz * 8,
-				})
-			}
-		}
-	}
-
-	if len(st.Field) > 0 {
-		lf := st.Field[len(st.Field)-1]
-		st.ByteSize = lf.ByteOffset + lf.Type.Common().ByteSize
-	}
-	fe.closureStructType = st
-	s.funcExtraMap[fn] = fe
-	return st
 }
 
 var (
@@ -508,12 +462,12 @@ func hasPtrType(t godwarf.Type) bool {
 		return true
 	case *godwarf.StructType:
 		for _, f := range typ.Field {
-			if hasPtrType(resolveTypedef(f.Type)) {
+			if hasPtrType(godwarf.ResolveTypedef(f.Type)) {
 				return true
 			}
 		}
 	case *godwarf.ArrayType:
-		return hasPtrType(resolveTypedef(typ.Type))
+		return hasPtrType(godwarf.ResolveTypedef(typ.Type))
 	}
 	return false
 }
@@ -529,7 +483,7 @@ func ObjectReference(t *proc.Target, filename string) (*ObjRefScope, error) {
 		return nil, err
 	}
 
-	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope, funcExtraMap: make(map[*proc.Function]funcExtra)}
+	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope}
 	err = heapScope.readHeap()
 	if err != nil {
 		return nil, err

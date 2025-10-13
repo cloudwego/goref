@@ -70,7 +70,7 @@ func (v *ReferenceVariable) dereference(s *ObjRefScope) *ReferenceVariable {
 		if err != nil {
 			return nil
 		}
-		nv := s.findObject(Address(ptr), resolveTypedef(t.Type), proc.DereferenceMemory(v.mem))
+		nv := s.findObject(Address(ptr), godwarf.ResolveTypedef(t.Type), proc.DereferenceMemory(v.mem))
 		return nv
 	default:
 		return nil
@@ -79,7 +79,7 @@ func (v *ReferenceVariable) dereference(s *ObjRefScope) *ReferenceVariable {
 
 func (v *ReferenceVariable) toField(field *godwarf.StructField) *ReferenceVariable {
 	fieldAddr := v.Addr.Add(field.ByteOffset)
-	return newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", resolveTypedef(field.Type), v.mem, v.hb)
+	return newReferenceVariable(fieldAddr, field.Name+". ("+field.Type.String()+")", godwarf.ResolveTypedef(field.Type), v.mem, v.hb)
 }
 
 func (v *ReferenceVariable) arrayAccess(idx int64) *ReferenceVariable {
@@ -93,7 +93,7 @@ func (v *ReferenceVariable) arrayAccess(idx int64) *ReferenceVariable {
 	if idx < 10 {
 		name = "[" + strconv.Itoa(int(idx)) + "]"
 	}
-	return newReferenceVariable(elemAddr, name+". ("+at.Type.String()+")", resolveTypedef(at.Type), v.mem, v.hb)
+	return newReferenceVariable(elemAddr, name+". ("+at.Type.String()+")", godwarf.ResolveTypedef(at.Type), v.mem, v.hb)
 }
 
 func (v *ReferenceVariable) arrayLen() uint64 {
@@ -146,7 +146,7 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 	//
 	// The following code works for both runtime.iface and runtime.eface.
 
-	ityp := resolveTypedef(&v.RealType.(*godwarf.InterfaceType).TypedefType).(*godwarf.StructType)
+	ityp := godwarf.ResolveTypedef(&v.RealType.(*godwarf.InterfaceType).TypedefType).(*godwarf.StructType)
 
 	// +rtype -field iface.tab *itab|*internal/abi.ITab
 	// +rtype -field iface.data unsafe.Pointer
@@ -162,7 +162,7 @@ func (s *ObjRefScope) readInterface(v *ReferenceVariable) (_type *proc.Variable,
 			}
 			// +rtype *itab|*internal/abi.ITab
 			if ptr != 0 {
-				for _, tf := range resolveTypedef(f.Type.(*godwarf.PtrType).Type).(*godwarf.StructType).Field {
+				for _, tf := range godwarf.ResolveTypedef(f.Type.(*godwarf.PtrType).Type).(*godwarf.StructType).Field {
 					switch tf.Name {
 					case "Type":
 						// +rtype *internal/abi.Type
@@ -302,19 +302,6 @@ func pointerTo(typ godwarf.Type, arch *proc.Arch) godwarf.Type {
 			Offset:      0,
 		},
 		Type: typ,
-	}
-}
-
-func resolveTypedef(typ godwarf.Type) godwarf.Type {
-	for {
-		switch tt := typ.(type) {
-		case *godwarf.TypedefType:
-			typ = tt.Type
-		case *godwarf.QualType:
-			typ = tt.Type
-		default:
-			return typ
-		}
 	}
 }
 
