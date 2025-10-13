@@ -188,17 +188,29 @@ func (tf *TestFramework) validateResults(scope *gorefproc.ObjRefScope, expectedN
 
 // compareNodes recursively compares two memory nodes
 func (tf *TestFramework) compareNodes(expected, actual *MemoryNode) error {
-	// Compare basic properties
-	if expected.Size != actual.Size {
-		tf.t.Logf("  ✗ Size mismatch for %s: expected %d, actual %d", expected.Name, expected.Size, actual.Size)
+	// Compare Size
+	if expected.Size != nil && actual.Size != nil {
+		if !expected.Size.Matches(*actual.Size.Exact) {
+			tf.t.Logf("  ✗ Size mismatch for %s: expected %s, actual %d", expected.Name, expected.Size.String(), *actual.Size.Exact)
+			return fmt.Errorf("size mismatch for %s", expected.Name)
+		}
+	} else if expected.Size != nil && actual.Size == nil {
+		tf.t.Logf("  ✗ Size mismatch for %s: expected %s, actual <nil>", expected.Name, expected.Size.String())
 		return fmt.Errorf("size mismatch for %s", expected.Name)
 	}
 
-	if expected.Count != actual.Count {
-		tf.t.Logf("  ✗ Count mismatch for %s: expected %d, actual %d", expected.Name, expected.Count, actual.Count)
+	// Compare Count
+	if expected.Count != nil && actual.Count != nil {
+		if !expected.Count.Matches(*actual.Count.Exact) {
+			tf.t.Logf("  ✗ Count mismatch for %s: expected %s, actual %d", expected.Name, expected.Count.String(), *actual.Count.Exact)
+			return fmt.Errorf("count mismatch for %s", expected.Name)
+		}
+	} else if expected.Count != nil && actual.Count == nil {
+		tf.t.Logf("  ✗ Count mismatch for %s: expected %s, actual <nil>", expected.Name, expected.Count.String())
 		return fmt.Errorf("count mismatch for %s", expected.Name)
 	}
 
+	// Compare Type
 	if expected.Type != actual.Type {
 		tf.t.Logf("  ✗ Type mismatch for %s: expected %s, actual %s", expected.Name, expected.Type, actual.Type)
 		return fmt.Errorf("type mismatch for %s", expected.Name)
@@ -247,12 +259,82 @@ type ProfileNodeInterface interface {
 	GetSize() int64
 }
 
+// ValueRange represents a value that can be validated against different criteria
+type ValueRange struct {
+	Exact  *int64 // Exact value match (for backward compatibility)
+	Min    *int64 // Minimum value (inclusive)
+	Max    *int64 // Maximum value (inclusive)
+	Approx *int64 // Approximate value with ±10% tolerance
+}
+
+// ExactValue creates a ValueRange that requires exact match
+func ExactValue(value int64) *ValueRange {
+	return &ValueRange{Exact: &value}
+}
+
+// RangeValue creates a ValueRange that accepts values in [min, max] range
+func RangeValue(min, max int64) *ValueRange {
+	return &ValueRange{Min: &min, Max: &max}
+}
+
+// ApproxValue creates a ValueRange that accepts values within ±10% of expected
+func ApproxValue(expected int64) *ValueRange {
+	return &ValueRange{Approx: &expected}
+}
+
+// MinValue creates a ValueRange that accepts values >= min
+func MinValue(min int64) *ValueRange {
+	return &ValueRange{Min: &min}
+}
+
+// Matches checks if the actual value matches the criteria defined in ValueRange
+func (vr *ValueRange) Matches(actual int64) bool {
+	if vr.Exact != nil {
+		return actual == *vr.Exact
+	}
+	if vr.Approx != nil {
+		tolerance := *vr.Approx / 10 // ±10%
+		return actual >= *vr.Approx-tolerance && actual <= *vr.Approx+tolerance
+	}
+	if vr.Min != nil && vr.Max != nil {
+		return actual >= *vr.Min && actual <= *vr.Max
+	}
+	if vr.Min != nil {
+		return actual >= *vr.Min
+	}
+	if vr.Max != nil {
+		return actual <= *vr.Max
+	}
+	return false // No criteria defined
+}
+
+// String returns a human-readable representation of the ValueRange
+func (vr *ValueRange) String() string {
+	if vr.Exact != nil {
+		return fmt.Sprintf("=%d", *vr.Exact)
+	}
+	if vr.Approx != nil {
+		tolerance := *vr.Approx / 10
+		return fmt.Sprintf("~%d (±%d)", *vr.Approx, tolerance)
+	}
+	if vr.Min != nil && vr.Max != nil {
+		return fmt.Sprintf("[%d, %d]", *vr.Min, *vr.Max)
+	}
+	if vr.Min != nil {
+		return fmt.Sprintf(">=%d", *vr.Min)
+	}
+	if vr.Max != nil {
+		return fmt.Sprintf("<=%d", *vr.Max)
+	}
+	return "undefined"
+}
+
 // MemoryNode represents a node in the memory reference tree
 type MemoryNode struct {
 	Name     string        `json:"name,omitempty"`     // Node name (e.g., "main.globalSlice", "main.globalSlice[0]")
 	Type     string        `json:"type,omitempty"`     // Type information (e.g., "[]int", "*main.Data")
-	Size     int64         `json:"size,omitempty"`     // Memory size in bytes
-	Count    int64         `json:"count,omitempty"`    // Number of objects
+	Size     *ValueRange   `json:"size,omitempty"`     // Memory size in bytes with flexible validation
+	Count    *ValueRange   `json:"count,omitempty"`    // Number of objects with flexible validation
 	Children []*MemoryNode `json:"children,omitempty"` // Child nodes
 }
 
@@ -307,8 +389,18 @@ func (tf *TestFramework) extractNodePathFromKey(key string, stringTable []string
 // createOrUpdateNode creates or updates a node in the memory tree
 func (tf *TestFramework) createOrUpdateNode(node *MemoryNode, path []string, count, size int64) {
 	if len(path) == 0 {
-		node.Size += size
-		node.Count += count
+		// For root node, we need to accumulate values
+		if node.Size == nil {
+			node.Size = ExactValue(size)
+		} else if node.Size.Exact != nil {
+			*node.Size.Exact += size
+		}
+
+		if node.Count == nil {
+			node.Count = ExactValue(count)
+		} else if node.Count.Exact != nil {
+			*node.Count.Exact += count
+		}
 		return
 	}
 	name, typ := tf.extractNameAndTypeFromPath(path[len(path)-1])

@@ -42,8 +42,8 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.main.localString",
-				Size:  80,
-				Count: 2,
+				Size:  ExactValue(80),
+				Count: ExactValue(2),
 			},
 		},
 	},
@@ -75,8 +75,8 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.main.globalSlice",
-				Size:  48, // slice struct + 6 int elements
-				Count: 1,
+				Size:  ExactValue(48), // slice struct + 6 int elements
+				Count: ExactValue(1),
 			},
 		},
 	},
@@ -110,13 +110,13 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.globalSlice",
-				Size:  48,
-				Count: 1,
+				Size:  ExactValue(48), // slice struct + 5 int elements
+				Count: ExactValue(1),
 			},
 			{
 				Name:  "main.globalArray",
-				Size:  48,
-				Count: 1,
+				Size:  ExactValue(48), // array struct + 5 int elements
+				Count: ExactValue(1),
 			},
 		},
 	},
@@ -149,20 +149,20 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.globalMap",
-				Size:  336,
-				Count: 2,
+				Size:  ExactValue(336),
+				Count: ExactValue(2),
 				Children: []*MemoryNode{
 					{
 						Name:  "$mapkey",
 						Type:  "string",
-						Size:  192,
-						Count: 3,
+						Size:  ExactValue(192),
+						Count: ExactValue(3),
 					},
 					{
 						Name:  "$mapval",
 						Type:  "string",
-						Size:  192,
-						Count: 3,
+						Size:  ExactValue(192),
+						Count: ExactValue(3),
 					},
 				},
 			},
@@ -205,13 +205,13 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.globalStruct",
-				Size:  32,
-				Count: 1,
+				Size:  ExactValue(32),
+				Count: ExactValue(1),
 				Children: []*MemoryNode{
 					{
 						Name:  "Ptr",
-						Size:  16,
-						Count: 1,
+						Size:  ExactValue(16),
+						Count: ExactValue(1),
 						Type:  "*int",
 					},
 				},
@@ -250,8 +250,8 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.main.globalClosure",
-				Size:  16,
-				Count: 1,
+				Size:  ExactValue(16),
+				Count: ExactValue(1),
 			},
 		},
 	},
@@ -297,8 +297,8 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.fieldPtr",
-				Size:  128,
-				Count: 1,
+				Size:  ExactValue(128),
+				Count: ExactValue(1),
 			},
 		},
 	},
@@ -356,19 +356,19 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.globalOuter",
-				Size:  32,
-				Count: 1,
+				Size:  ExactValue(32),
+				Count: ExactValue(1),
 				Children: []*MemoryNode{
 					{
 						Name:  "Middle",
-						Size:  24,
-						Count: 1,
+						Size:  ExactValue(24),
+						Count: ExactValue(1),
 						Type:  "*main.MiddleStruct",
 						Children: []*MemoryNode{
 							{
 								Name:  "Inner",
-								Size:  24,
-								Count: 1,
+								Size:  ExactValue(24),
+								Count: ExactValue(1),
 								Type:  "*main.InnerData",
 							},
 						},
@@ -425,13 +425,13 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.main.finTarget",
-				Size:  896,
-				Count: 1,
+				Size:  ExactValue(896),
+				Count: ExactValue(1),
 			},
 			{
 				Name:  "main.main.obj",
-				Size:  896,
-				Count: 1,
+				Size:  ExactValue(896),
+				Count: ExactValue(1),
 			},
 		},
 	},
@@ -482,13 +482,13 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.main.obj",
-				Size:  416,
-				Count: 1,
+				Size:  ExactValue(416),
+				Count: ExactValue(1),
 			},
 			{
 				Name:  "main.main.cleanupTarget",
-				Size:  416,
-				Count: 1,
+				Size:  ExactValue(416),
+				Count: ExactValue(1),
 			},
 		},
 	},
@@ -545,13 +545,13 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.globalWriter",
-				Size:  8,
-				Count: 1,
+				Size:  ExactValue(8),
+				Count: ExactValue(1),
 				Children: []*MemoryNode{
 					{
 						Name:  "fileData",
-						Size:  24,
-						Count: 1,
+						Size:  ExactValue(24),
+						Count: ExactValue(1),
 						Type:  "*main.Data",
 					},
 				},
@@ -608,24 +608,24 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.globalStringChan",
-				Size:  272,
-				Count: 2,
+				Size:  ExactValue(272),
+				Count: ExactValue(2),
 			},
 			{
 				Name:  "main.globalMessageChan",
-				Size:  160,
-				Count: 2,
+				Size:  ExactValue(160),
+				Count: ExactValue(2),
 				Children: []*MemoryNode{
 					{
 						Name:  "[0]",
-						Size:  24,
-						Count: 1,
+						Size:  ExactValue(24),
+						Count: ExactValue(1),
 						Type:  "*main.Message",
 					},
 					{
 						Name:  "[1]",
-						Size:  24,
-						Count: 1,
+						Size:  ExactValue(24),
+						Count: ExactValue(1),
 						Type:  "*main.Message",
 					},
 				},
@@ -675,18 +675,18 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.smallObj",
-				Size:  16, // 8 bytes data + 8 bytes overhead
-				Count: 1,
+				Size:  ExactValue(16), // 8 bytes data + 8 bytes overhead
+				Count: ExactValue(1),
 			},
 			{
 				Name:  "main.mediumObj",
-				Size:  128, // 128 bytes, exact size match
-				Count: 1,
+				Size:  ExactValue(128), // 128 bytes, exact size match
+				Count: ExactValue(1),
 			},
 			{
 				Name:  "main.largeObj",
-				Size:  896, // 800 bytes data + 96 bytes overhead
-				Count: 1,
+				Size:  ExactValue(896), // 800 bytes data + 96 bytes overhead
+				Count: ExactValue(1),
 			},
 		},
 	},
@@ -726,13 +726,13 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.node1",
-				Size:  16, // Node struct (int + pointer)
-				Count: 1,
+				Size:  ExactValue(16), // Node struct (int + pointer)
+				Count: ExactValue(1),
 				Children: []*MemoryNode{
 					{
 						Name:  "Next",
-						Size:  16,
-						Count: 1,
+						Size:  ExactValue(16),
+						Count: ExactValue(1),
 						Type:  "*main.Node",
 					},
 				},
