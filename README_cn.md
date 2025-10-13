@@ -29,7 +29,7 @@ $ go tool pprof -http=:5079 ./grf.out
 
 打开的 HTML 页面会显示堆内存的引用分布。你可以选择查看 "inuse space" 或 "inuse objects"。
 
-例如，从一个 [测试程序](https://github.com/cloudwego/goref/blob/main/testdata/mockleak/main.go) 中采集的堆内存引用分布如下所示，它反映了对象创建的调用栈分布。
+例如，从一个 [测试程序](https://github.com/cloudwego/goref/blob/main/test/testdata/mockleak/main.go) 中采集的堆内存引用分布如下所示，它反映了对象创建的调用栈分布。
 
 ![img_v3_02gq_63631612-6f2d-40ce-8f98-a4e52682ef7g](https://github.com/user-attachments/assets/9fb6bded-3f68-4b73-972d-a273c45b7680)
 
