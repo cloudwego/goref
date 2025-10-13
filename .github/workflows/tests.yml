@@ -1,6 +1,6 @@
 name: Tests
 
-on: [ push, pull_request ]
+on: [ pull_request ]
 
 jobs:
   unit-test-x64:
@@ -16,29 +16,29 @@ jobs:
           go-version: ${{ matrix.go }}
           cache: false # don't use cache for self-hosted runners
       - name: Unit Test
-        run: go test -race ./...
+        run: go test -v -race ./...
       - name: Benchmark
-        run: go test -bench=. -benchmem -run=none ./...
+        run: go test -v -bench=. -benchmem -run=none ./...
 
   unit-test-arm:
     strategy:
       matrix:
         go: [ "1.21", "1.22", "1.23", "1.24" ]
-    runs-on: [ ARM64 ] # It's OK under Linux or macOS
+    runs-on: [ Linux, ARM64 ]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
           cache: false # don't use cache for self-hosted runners
       - name: Unit Test
-        run: go test -race ./...
+        run: go test -v -race ./...
       - name: Benchmark
-        run: go test -bench=. -benchmem -run=none ./...
+        run: go test -v -bench=. -benchmem -run=none ./...
 
   codecov:
-    needs: [ unit-test-x64, unit-test-arm ]
+    needs: [ unit-test-x64 ]
     runs-on: [ Linux, X64 ]
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +48,7 @@ jobs:
           go-version: "1.23"
           cache: false # don't use cache for self-hosted runners
       - name: Run coverage
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic -coverpkg=github.com/cloudwego/goref/... ./...
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:

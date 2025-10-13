@@ -53,6 +53,12 @@ type ObjRefScope struct {
 	g *stack
 }
 
+// GetProfileDataForTest exports all internal profile data for testing purposes.
+// This allows direct validation of reference analysis without protobuf parsing.
+func (s *ObjRefScope) GetProfileDataForTest() (nodes map[string]*profileNode, strings []string, stringMap map[string]int) {
+	return s.pb.nodes, s.pb.strings, s.pb.stringMap
+}
+
 func (s *ObjRefScope) findObject(addr Address, typ godwarf.Type, mem proc.MemoryReadWriter) (v *ReferenceVariable) {
 	sp, base := s.findSpanAndBase(addr)
 	if sp == nil {
@@ -516,21 +522,22 @@ var loadSingleValue = proc.LoadConfig{}
 
 // ObjectReference scanning goroutine stack and global vars to search all heap objects they reference,
 // and outputs the reference relationship to the filename with pprof format.
-func ObjectReference(t *proc.Target, filename string) error {
+// Returns the ObjRefScope for testing purposes.
+func ObjectReference(t *proc.Target, filename string) (*ObjRefScope, error) {
 	scope, err := proc.ThreadScope(t, t.CurrentThread())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	heapScope := &HeapScope{mem: t.Memory(), bi: t.BinInfo(), scope: scope, funcExtraMap: make(map[*proc.Function]funcExtra)}
 	err = heapScope.readHeap()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	f, err := os.Create(filename)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	s := &ObjRefScope{
@@ -540,7 +547,7 @@ func ObjectReference(t *proc.Target, filename string) error {
 
 	mds, err := getModuleData(t.BinInfo(), t.Memory())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	s.mds = mds
 
@@ -647,5 +654,5 @@ func ObjectReference(t *proc.Target, filename string) error {
 
 	s.pb.flush()
 	log.Printf("successfully output to `%s`\n", filename)
-	return nil
+	return s, nil
 }
