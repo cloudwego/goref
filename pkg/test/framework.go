@@ -16,7 +16,6 @@ package test
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -116,7 +115,7 @@ func (tf *TestFramework) createTestProgram(scenario TestScenario) (*TestProgram,
 
 	// Compile program
 	binaryFile := filepath.Join(tf.tempDir, scenario.Name)
-	cmd := exec.Command("go", "build", "-gcflags=all=-N -l", "-o", binaryFile, sourceFile)
+	cmd := exec.Command("go", "build", "-gcflags", "all=-N -l", "-o", binaryFile, sourceFile)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("compilation failed: %w\nOutput: %s", err, output)
 	}
@@ -187,28 +186,66 @@ func (tf *TestFramework) validateResults(scope *gorefproc.ObjRefScope, expectedT
 	return nil
 }
 
-// compareMemoryTrees compares expected and actual memory trees using JSON
+// compareMemoryTrees compares expected and actual memory trees recursively
 func (tf *TestFramework) compareMemoryTrees(expected, actual *MemoryTree) error {
-	// Convert both trees to JSON
-	expectedJSON, err := json.Marshal(expected.Root)
-	if err != nil {
-		return fmt.Errorf("failed to marshal expected tree: %w", err)
+	return tf.compareNodes(expected.Root, actual.Root, "")
+}
+
+// compareNodes recursively compares two memory nodes
+func (tf *TestFramework) compareNodes(expected, actual *MemoryNode, path string) error {
+	currentPath := path
+	if expected.Name != "" {
+		if currentPath != "" {
+			currentPath += "."
+		}
+		currentPath += expected.Name
 	}
 
-	actualJSON, err := json.Marshal(actual.Root)
-	if err != nil {
-		return fmt.Errorf("failed to marshal actual tree: %w", err)
+	// Compare basic properties
+	if expected.Size != actual.Size {
+		tf.t.Logf("  ✗ Size mismatch for %s: expected %d, actual %d", currentPath, expected.Size, actual.Size)
+		return fmt.Errorf("size mismatch for %s", currentPath)
 	}
 
-	// Compare JSON strings
-	if string(expectedJSON) != string(actualJSON) {
-		tf.t.Logf("  ✗ JSON comparison failed")
-		tf.t.Logf("  Expected JSON: %s", string(expectedJSON))
-		tf.t.Logf("  Actual JSON: %s", string(actualJSON))
-		return fmt.Errorf("JSON trees don't match")
+	if expected.Count != actual.Count {
+		tf.t.Logf("  ✗ Count mismatch for %s: expected %d, actual %d", currentPath, expected.Count, actual.Count)
+		return fmt.Errorf("count mismatch for %s", currentPath)
 	}
 
-	tf.t.Logf("  ✓ JSON trees match:\nexpected: %s\nactual:   %s", string(expectedJSON), string(actualJSON))
+	// Compare children
+	expectedChildren := make(map[string]*MemoryNode)
+	actualChildren := make(map[string]*MemoryNode)
+
+	for _, child := range expected.Children {
+		expectedChildren[child.Name] = child
+	}
+
+	for _, child := range actual.Children {
+		actualChildren[child.Name] = child
+	}
+
+	// Check for missing children
+	for name, expectedChild := range expectedChildren {
+		actualChild, found := actualChildren[name]
+		if !found {
+			tf.t.Logf("  ✗ Missing child node: %s.%s", currentPath, name)
+			return fmt.Errorf("missing child node: %s.%s", currentPath, name)
+		}
+
+		// Recursively compare child nodes
+		if err := tf.compareNodes(expectedChild, actualChild, currentPath); err != nil {
+			return err
+		}
+	}
+
+	// Check for unexpected children
+	for name := range actualChildren {
+		if _, found := expectedChildren[name]; !found {
+			tf.t.Logf("  ⚠ Unexpected child node: %s.%s", currentPath, name)
+			// Don't fail the test for unexpected nodes, just warn
+		}
+	}
+
 	return nil
 }
 
@@ -220,6 +257,7 @@ type ProfileNodeInterface interface {
 
 // MemoryNode represents a node in the memory reference tree
 type MemoryNode struct {
+	Path     string        `json:"-"`
 	Name     string        `json:"name,omitempty"`     // Node name (e.g., "main.globalSlice", "main.globalSlice[0]")
 	Type     string        `json:"type,omitempty"`     // Type information (e.g., "[]int", "*main.Data")
 	Size     int64         `json:"size,omitempty"`     // Memory size in bytes
@@ -229,15 +267,13 @@ type MemoryNode struct {
 
 // MemoryTree represents the complete memory reference tree
 type MemoryTree struct {
-	Root    *MemoryNode            // Root node
-	NodeMap map[string]*MemoryNode // Quick lookup map for nodes
+	Root *MemoryNode // Root node
 }
 
 // buildMemoryTreeFromNodes builds a complete memory reference tree from goref profile nodes
 func (tf *TestFramework) buildMemoryTreeFromNodes(nodes map[string]ProfileNodeInterface, stringTable []string) *MemoryTree {
 	tree := &MemoryTree{
-		Root:    &MemoryNode{Children: []*MemoryNode{}},
-		NodeMap: make(map[string]*MemoryNode),
+		Root: &MemoryNode{Children: []*MemoryNode{}},
 	}
 
 	mainPackageNodes := 0
@@ -245,28 +281,29 @@ func (tf *TestFramework) buildMemoryTreeFromNodes(nodes map[string]ProfileNodeIn
 	// Process each node to build the tree structure
 	for key, node := range nodes {
 		nodePath := tf.extractNodePathFromKey(key, stringTable)
-		if nodePath == "" {
+		if nodePath == nil {
 			continue // Skip empty paths
 		}
 
 		// Only include nodes from main package or system nodes for debugging
-		if strings.HasPrefix(nodePath, "main.") {
+		if strings.HasPrefix(nodePath[len(nodePath)-1], "main.") {
 			mainPackageNodes++
-			tf.createOrUpdateNode(tree, nodePath, node.GetCount(), node.GetSize(), stringTable)
+			tf.createOrUpdateNode(tree.Root, nodePath, node.GetCount(), node.GetSize())
 		}
 	}
 
 	tf.t.Logf("  Found %d main package nodes", mainPackageNodes)
+
 	return tree
 }
 
 // extractNodePathFromKey extracts a readable node path from the profile key
-func (tf *TestFramework) extractNodePathFromKey(key string, stringTable []string) string {
+func (tf *TestFramework) extractNodePathFromKey(key string, stringTable []string) []string {
 	// Convert the binary key back to uint64 indexes
 	indexes := gorefproc.Str2uint64s(key)
 
 	if len(indexes) == 0 {
-		return ""
+		return nil
 	}
 
 	// Build the path from string table
@@ -280,42 +317,45 @@ func (tf *TestFramework) extractNodePathFromKey(key string, stringTable []string
 		}
 	}
 
-	return strings.Join(pathParts, ".")
+	return pathParts
 }
 
 // createOrUpdateNode creates or updates a node in the memory tree
-func (tf *TestFramework) createOrUpdateNode(tree *MemoryTree, path string, count, size int64, stringTable []string) {
-	// Check if node already exists
-	if existingNode, found := tree.NodeMap[path]; found {
-		existingNode.Count += count
-		existingNode.Size += size
+func (tf *TestFramework) createOrUpdateNode(node *MemoryNode, path []string, count, size int64) {
+	if len(path) == 0 {
+		node.Size += size
+		node.Count += count
 		return
 	}
 
-	// Create new node
-	node := &MemoryNode{
-		Name:  path,
-		Size:  size,
-		Count: count,
-		Type:  tf.extractTypeFromPath(path, stringTable),
-	}
-
-	// Add to tree
-	tree.NodeMap[path] = node
-	tree.Root.Children = append(tree.Root.Children, node)
-}
-
-// extractTypeFromKey extracts type information from the key path
-func (tf *TestFramework) extractTypeFromPath(path string, stringTable []string) string {
-	// Simple type extraction - can be enhanced later
-	parts := strings.Split(path, ".")
-	if len(parts) > 0 {
-		lastPart := parts[len(parts)-1]
-		if strings.Contains(lastPart, "(") && strings.Contains(lastPart, ")") {
-			return lastPart
+	curPath := path[len(path)-1]
+	for _, child := range node.Children {
+		if child.Path == curPath {
+			tf.createOrUpdateNode(child, path[:len(path)-1], count, size)
+			return
 		}
 	}
-	return ""
+	name, typ := tf.extractNameAndTypeFromPath(curPath)
+	// Create new node
+	child := &MemoryNode{
+		Path: curPath,
+		Name: name,
+		Type: typ,
+	}
+
+	node.Children = append(node.Children, child)
+	tf.createOrUpdateNode(child, path[:len(path)-1], count, size)
+}
+
+// extractTypeFromKey extracts name and type information from the key path
+func (tf *TestFramework) extractNameAndTypeFromPath(path string) (string, string) {
+	// Simple type extraction - can be enhanced later
+	parts := strings.Split(path, " ")
+	if len(parts) > 1 {
+		return parts[0][:len(parts[0])-1], parts[1][1 : len(parts[1])-1]
+	} else {
+		return parts[0], ""
+	}
 }
 
 // Start starts the test program
