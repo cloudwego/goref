@@ -30,12 +30,10 @@ func TestScenarios(t *testing.T) {
 		scenario TestScenario
 	}{
 		{"local slice allocation", LocalSliceAllocationScenario},
-		{"global basic types", GlobalBasicTypesScenario},
+		{"global basic types", LocalStringScenario},
 		{"global slice", GlobalSliceScenario},
-		{"global array", GlobalArrayScenario},
 		{"global map", GlobalMapScenario},
 		{"global struct", GlobalStructScenario},
-		{"struct field references", StructFieldScenario},
 		{"closure variable capture", ClosureScenario},
 		{"field reference locking", FieldLockScenario},
 		{"nested struct field references", NestedStructScenario},

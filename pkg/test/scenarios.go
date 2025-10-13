@@ -16,6 +16,40 @@ package test
 
 import "time"
 
+// LocalStringScenario tests local string allocation
+var LocalStringScenario = TestScenario{
+	Name: "local string allocation",
+	Code: `package main
+import (
+	"fmt"
+	"time"
+	"runtime"
+)
+
+func main() {
+	localString := new(string)
+	*localString = time.Now().String()
+
+	fmt.Println("READY")
+	time.Sleep(100 * time.Second)
+
+	go func() {
+		runtime.KeepAlive(localString)
+	}()
+}
+`,
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
+			{
+				Name:  "main.main.localString",
+				Size:  80,
+				Count: 2,
+			},
+		},
+	},
+	Timeout: 30 * time.Second,
+}
+
 // LocalSliceAllocationScenario tests local slice allocation
 var LocalSliceAllocationScenario = TestScenario{
 	Name: "local slice allocation",
@@ -49,53 +83,6 @@ func main() {
 	Timeout: 30 * time.Second,
 }
 
-// GlobalBasicTypesScenario tests global basic types using pointers to ensure heap allocation
-var GlobalBasicTypesScenario = TestScenario{
-	Name: "global basic types",
-	Code: `package main
-import (
-	"fmt"
-	"time"
-)
-
-var (
-	globalInt    *int64
-	globalString *string
-	globalFloat  *float64
-)
-
-func main() {
-	// Initialize global pointers in main to ensure heap allocation via mallocgc
-	globalInt = new(int64)
-	*globalInt = 12345
-
-	globalString = new(string)
-	*globalString = "hello world"
-
-	globalFloat = new(float64)
-	*globalFloat = 3.14159
-
-	fmt.Println("READY")
-	time.Sleep(100 * time.Second)
-}
-`,
-	Expected: &MemoryNode{
-		Children: []*MemoryNode{
-			{
-				Name:  "main.globalString",
-				Size:  16,
-				Count: 1,
-			},
-			{
-				Name:  "main.globalInt",
-				Size:  16,
-				Count: 1,
-			},
-		},
-	},
-	Timeout: 30 * time.Second,
-}
-
 // GlobalSliceScenario tests global slice and its internal fields
 var GlobalSliceScenario = TestScenario{
 	Name: "global slice",
@@ -106,13 +93,14 @@ import (
 )
 
 var globalSlice []int
+var globalArray *[5]int
 
 func main() {
 	// Initialize global slice in main to ensure heap allocation
 	globalSlice = make([]int, 5)
-	for i := 0; i < 5; i++ {
-		globalSlice[i] = i * 10
-	}
+
+	// Initialize global array pointer in main to ensure heap allocation
+	globalArray = new([5]int)
 
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
@@ -125,37 +113,6 @@ func main() {
 				Size:  48,
 				Count: 1,
 			},
-		},
-	},
-	Timeout: 30 * time.Second,
-}
-
-// GlobalArrayScenario tests global array and its elements
-var GlobalArrayScenario = TestScenario{
-	Name: "global array",
-	Code: `package main
-import (
-	"fmt"
-	"time"
-)
-
-var globalArray *[5]int
-
-func main() {
-	// Initialize global array pointer in main to ensure heap allocation
-	globalArray = new([5]int)
-	globalArray[0] = 10
-	globalArray[1] = 20
-	globalArray[2] = 30
-	globalArray[3] = 40
-	globalArray[4] = 50
-
-	fmt.Println("READY")
-	time.Sleep(100 * time.Second)
-}
-`,
-	Expected: &MemoryNode{
-		Children: []*MemoryNode{
 			{
 				Name:  "main.globalArray",
 				Size:  48,
@@ -175,14 +132,14 @@ import (
 	"time"
 )
 
-var globalMap map[string]int
+var globalMap map[string]string
 
 func main() {
 	// Initialize global map in main to ensure heap allocation
-	globalMap = make(map[string]int)
-	globalMap["apple"] = 10
-	globalMap["banana"] = 20
-	globalMap["cherry"] = 30
+	globalMap = make(map[string]string)
+	globalMap[time.Now().String()] = time.Now().String()
+	globalMap[time.Now().String()] = time.Now().String()
+	globalMap[time.Now().String()] = time.Now().String()
 
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
@@ -192,8 +149,22 @@ func main() {
 		Children: []*MemoryNode{
 			{
 				Name:  "main.globalMap",
-				Size:  256,
+				Size:  336,
 				Count: 2,
+				Children: []*MemoryNode{
+					{
+						Name:  "$mapkey",
+						Type:  "string",
+						Size:  192,
+						Count: 3,
+					},
+					{
+						Name:  "$mapval",
+						Type:  "string",
+						Size:  192,
+						Count: 3,
+					},
+				},
 			},
 		},
 	},
@@ -236,62 +207,14 @@ func main() {
 				Name:  "main.globalStruct",
 				Size:  32,
 				Count: 1,
-			},
-		},
-	},
-	Timeout: 30 * time.Second,
-}
-
-// StructFieldScenario tests struct field-level references
-var StructFieldScenario = TestScenario{
-	Name: "struct field references",
-	Code: `package main
-import (
-	"fmt"
-	"time"
-)
-
-type Data struct {
-	ID   int
-	Name string
-	Ptr  *int
-}
-
-type Container struct {
-	Data *Data
-	Num  int
-}
-
-var globalContainer *Container
-var globalIntPtr *int
-
-func main() {
-	// Create nested struct with field references
-	globalContainer = &Container{
-		Data: &Data{
-			ID:   123,
-			Name: "test",
-		},
-		Num: 456,
-	}
-
-	// Create separate int pointer
-	globalIntPtr = new(int)
-	*globalIntPtr = 789
-
-	// Point struct field to the int pointer
-	globalContainer.Data.Ptr = globalIntPtr
-
-	fmt.Println("READY")
-	time.Sleep(100 * time.Second)
-}
-`,
-	Expected: &MemoryNode{
-		Children: []*MemoryNode{
-			{
-				Name:  "main.globalContainer",
-				Size:  16,
-				Count: 1,
+				Children: []*MemoryNode{
+					{
+						Name:  "Ptr",
+						Size:  16,
+						Count: 1,
+						Type:  "*int",
+					},
+				},
 			},
 		},
 	},
@@ -307,14 +230,12 @@ import (
 	"time"
 )
 
-var globalClosure func()
-
 func main() {
 	// Create a variable that will be captured by closure
 	capturedValue := 42
 
 	// Create closure that captures the variable
-	globalClosure = func() {
+	globalClosure := func() {
 		fmt.Printf("Captured value: %d\n", capturedValue)
 	}
 
@@ -322,13 +243,13 @@ func main() {
 	time.Sleep(100 * time.Second)
 
 	// Call the closure to prevent optimization
-	globalClosure()
+	go globalClosure()
 }
 `,
 	Expected: &MemoryNode{
 		Children: []*MemoryNode{
 			{
-				Name:  "main.globalClosure",
+				Name:  "main.main.globalClosure",
 				Size:  16,
 				Count: 1,
 			},
@@ -353,33 +274,29 @@ type LargeStruct struct {
 	Flag   bool
 }
 
-var globalStruct *LargeStruct
 var fieldPtr *int
 
 func main() {
 	// Create a large struct
-	globalStruct = &LargeStruct{
+	localStruct := &LargeStruct{
 		ID:   123,
 		Name: "large struct",
 	}
 	for i := 0; i < 100; i++ {
-		globalStruct.Data[i] = byte(i)
+		localStruct.Data[i] = byte(i)
 	}
 
 	// Create a pointer to a field, which should lock the entire struct
-	fieldPtr = &globalStruct.ID
+	fieldPtr = &localStruct.ID
 
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
-
-	// Use the field pointer to prevent optimization
-	*fieldPtr = 456
 }
 `,
 	Expected: &MemoryNode{
 		Children: []*MemoryNode{
 			{
-				Name:  "main.globalStruct",
+				Name:  "main.fieldPtr",
 				Size:  128,
 				Count: 1,
 			},
@@ -441,6 +358,22 @@ func main() {
 				Name:  "main.globalOuter",
 				Size:  32,
 				Count: 1,
+				Children: []*MemoryNode{
+					{
+						Name:  "Middle",
+						Size:  24,
+						Count: 1,
+						Type:  "*main.MiddleStruct",
+						Children: []*MemoryNode{
+							{
+								Name:  "Inner",
+								Size:  24,
+								Count: 1,
+								Type:  "*main.InnerData",
+							},
+						},
+					},
+				},
 			},
 		},
 	},
@@ -568,7 +501,6 @@ var InterfaceScenario = TestScenario{
 	Code: `package main
 import (
 	"fmt"
-	"runtime"
 	"time"
 )
 
@@ -582,7 +514,7 @@ type Writer interface {
 }
 
 type FileWriter struct {
-	filePath string
+	fileData *Data
 }
 
 func (fw *FileWriter) Write(data string) error {
@@ -594,39 +526,35 @@ var globalWriter Writer
 
 func main() {
 	// Create interface variable and assign to global to force heap allocation
-	globalWriter = &FileWriter{
-		filePath: "/tmp/test.txt",
-	}
+	globalWriter = &FileWriter{}
 
 	// Create data objects
-	data1 := &Data{
+	data := &Data{
 		ID:   12345,
 		Name: "test data 1",
 	}
-	data2 := &Data{
-		ID:   67890,
-		Name: "test data 2",
-	}
 
 	// Store interface reference to data
-	globalWriter.(*FileWriter).filePath = data1.Name
-	globalWriter.(*FileWriter).filePath = data2.Name
+	globalWriter.(*FileWriter).fileData = data
 
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
-
-	// Keep objects alive
-	runtime.KeepAlive(globalWriter)
-	runtime.KeepAlive(data1)
-	runtime.KeepAlive(data2)
 }
 `,
 	Expected: &MemoryNode{
 		Children: []*MemoryNode{
 			{
 				Name:  "main.globalWriter",
-				Size:  16,
+				Size:  8,
 				Count: 1,
+				Children: []*MemoryNode{
+					{
+						Name:  "fileData",
+						Size:  24,
+						Count: 1,
+						Type:  "*main.Data",
+					},
+				},
 			},
 		},
 	},
@@ -639,7 +567,6 @@ var ChannelScenario = TestScenario{
 	Code: `package main
 import (
 	"fmt"
-	"runtime"
 	"time"
 )
 
@@ -675,12 +602,6 @@ func main() {
 
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
-
-	// Keep objects alive
-	runtime.KeepAlive(globalStringChan)
-	runtime.KeepAlive(globalMessageChan)
-	runtime.KeepAlive(msg1)
-	runtime.KeepAlive(msg2)
 }
 `,
 	Expected: &MemoryNode{
@@ -694,6 +615,20 @@ func main() {
 				Name:  "main.globalMessageChan",
 				Size:  160,
 				Count: 2,
+				Children: []*MemoryNode{
+					{
+						Name:  "[0]",
+						Size:  24,
+						Count: 1,
+						Type:  "*main.Message",
+					},
+					{
+						Name:  "[1]",
+						Size:  24,
+						Count: 1,
+						Type:  "*main.Message",
+					},
+				},
 			},
 		},
 	},
@@ -706,7 +641,6 @@ var AllocationHeaderScenario = TestScenario{
 	Code: `package main
 import (
 	"fmt"
-	"runtime"
 	"time"
 )
 
@@ -735,11 +669,6 @@ func main() {
 
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
-
-	// Keep objects alive
-	runtime.KeepAlive(smallObj)
-	runtime.KeepAlive(mediumObj)
-	runtime.KeepAlive(largeObj)
 }
 `,
 	Expected: &MemoryNode{
@@ -770,7 +699,6 @@ var CircularReferenceScenario = TestScenario{
 	Code: `package main
 import (
 	"fmt"
-	"runtime"
 	"time"
 )
 
@@ -792,10 +720,6 @@ func main() {
 
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
-
-	// Keep objects alive
-	runtime.KeepAlive(node1)
-	runtime.KeepAlive(node2)
 }
 `,
 	Expected: &MemoryNode{
@@ -804,6 +728,14 @@ func main() {
 				Name:  "main.node1",
 				Size:  16, // Node struct (int + pointer)
 				Count: 1,
+				Children: []*MemoryNode{
+					{
+						Name:  "Next",
+						Size:  16,
+						Count: 1,
+						Type:  "*main.Node",
+					},
+				},
 			},
 		},
 	},

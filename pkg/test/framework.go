@@ -278,7 +278,22 @@ func (tf *TestFramework) buildMemoryTreeFromNodes(nodes map[string]ProfileNodeIn
 
 	tf.t.Logf("  Found %d main package nodes", mainPackageNodes)
 
+	// Debug: log all actual node names with details recursively
+	tf.t.Logf("  Actual node names and details:")
+	tf.logNodeDetails(root.Children, 1)
+
 	return root
+}
+
+// logNodeDetails recursively logs node details with proper indentation
+func (tf *TestFramework) logNodeDetails(nodes []*MemoryNode, indent int) {
+	prefix := strings.Repeat("  ", indent+1)
+	for _, node := range nodes {
+		tf.t.Logf("%s- %s (Size: %d, Count: %d, Type: %s)", prefix, node.Name, node.Size, node.Count, node.Type)
+		if len(node.Children) > 0 {
+			tf.logNodeDetails(node.Children, indent+1)
+		}
+	}
 }
 
 // extractNodePathFromKey extracts a readable node path from the profile key
