@@ -109,7 +109,7 @@ type TestProgram struct {
 // createTestProgram creates a test program from scenario
 func (tf *TestFramework) createTestProgram(scenario TestScenario) (*TestProgram, error) {
 	sourceFile := filepath.Join(tf.tempDir, fmt.Sprintf("%s.go", scenario.Name))
-	if err := os.WriteFile(sourceFile, []byte(scenario.Code), 0644); err != nil {
+	if err := os.WriteFile(sourceFile, []byte(scenario.Code), 0o644); err != nil {
 		return nil, fmt.Errorf("failed to write source file: %w", err)
 	}
 
