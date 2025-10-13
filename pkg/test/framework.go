@@ -178,7 +178,7 @@ func (tf *TestFramework) validateResults(scope *gorefproc.ObjRefScope, expectedN
 	actualNode := tf.buildMemoryTreeFromNodes(nodeInterfaces, stringTable)
 
 	// Compare nodes
-	if err := tf.compareNodes(expectedNode, actualNode, ""); err != nil {
+	if err := tf.compareNodes(expectedNode, actualNode); err != nil {
 		return fmt.Errorf("node comparison failed: %v", err)
 	}
 
@@ -186,26 +186,22 @@ func (tf *TestFramework) validateResults(scope *gorefproc.ObjRefScope, expectedN
 	return nil
 }
 
-
 // compareNodes recursively compares two memory nodes
-func (tf *TestFramework) compareNodes(expected, actual *MemoryNode, path string) error {
-	currentPath := path
-	if expected.Name != "" {
-		if currentPath != "" {
-			currentPath += "."
-		}
-		currentPath += expected.Name
-	}
-
+func (tf *TestFramework) compareNodes(expected, actual *MemoryNode) error {
 	// Compare basic properties
 	if expected.Size != actual.Size {
-		tf.t.Logf("  ✗ Size mismatch for %s: expected %d, actual %d", currentPath, expected.Size, actual.Size)
-		return fmt.Errorf("size mismatch for %s", currentPath)
+		tf.t.Logf("  ✗ Size mismatch for %s: expected %d, actual %d", expected.Name, expected.Size, actual.Size)
+		return fmt.Errorf("size mismatch for %s", expected.Name)
 	}
 
 	if expected.Count != actual.Count {
-		tf.t.Logf("  ✗ Count mismatch for %s: expected %d, actual %d", currentPath, expected.Count, actual.Count)
-		return fmt.Errorf("count mismatch for %s", currentPath)
+		tf.t.Logf("  ✗ Count mismatch for %s: expected %d, actual %d", expected.Name, expected.Count, actual.Count)
+		return fmt.Errorf("count mismatch for %s", expected.Name)
+	}
+
+	if expected.Type != actual.Type {
+		tf.t.Logf("  ✗ Type mismatch for %s: expected %s, actual %s", expected.Name, expected.Type, actual.Type)
+		return fmt.Errorf("type mismatch for %s", expected.Name)
 	}
 
 	// Compare children
@@ -224,12 +220,12 @@ func (tf *TestFramework) compareNodes(expected, actual *MemoryNode, path string)
 	for name, expectedChild := range expectedChildren {
 		actualChild, found := actualChildren[name]
 		if !found {
-			tf.t.Logf("  ✗ Missing child node: %s.%s", currentPath, name)
-			return fmt.Errorf("missing child node: %s.%s", currentPath, name)
+			tf.t.Logf("  ✗ Missing child node: %s.%s", expected.Name, name)
+			return fmt.Errorf("missing child node: %s.%s", expected.Name, name)
 		}
 
 		// Recursively compare child nodes
-		if err := tf.compareNodes(expectedChild, actualChild, currentPath); err != nil {
+		if err := tf.compareNodes(expectedChild, actualChild); err != nil {
 			return err
 		}
 	}
@@ -237,8 +233,8 @@ func (tf *TestFramework) compareNodes(expected, actual *MemoryNode, path string)
 	// Check for unexpected children
 	for name := range actualChildren {
 		if _, found := expectedChildren[name]; !found {
-			tf.t.Logf("  ⚠ Unexpected child node: %s.%s", currentPath, name)
-			// Don't fail the test for unexpected nodes, just warn
+			tf.t.Logf("  ✗ Unexpected child node: %s.%s", expected.Name, name)
+			return fmt.Errorf("unexpected child node: %s.%s", expected.Name, name)
 		}
 	}
 
@@ -253,14 +249,12 @@ type ProfileNodeInterface interface {
 
 // MemoryNode represents a node in the memory reference tree
 type MemoryNode struct {
-	Path     string        `json:"-"`
 	Name     string        `json:"name,omitempty"`     // Node name (e.g., "main.globalSlice", "main.globalSlice[0]")
 	Type     string        `json:"type,omitempty"`     // Type information (e.g., "[]int", "*main.Data")
 	Size     int64         `json:"size,omitempty"`     // Memory size in bytes
 	Count    int64         `json:"count,omitempty"`    // Number of objects
 	Children []*MemoryNode `json:"children,omitempty"` // Child nodes
 }
-
 
 // buildMemoryTreeFromNodes builds a memory reference node from goref profile nodes
 func (tf *TestFramework) buildMemoryTreeFromNodes(nodes map[string]ProfileNodeInterface, stringTable []string) *MemoryNode {
@@ -317,18 +311,15 @@ func (tf *TestFramework) createOrUpdateNode(node *MemoryNode, path []string, cou
 		node.Count += count
 		return
 	}
-
-	curPath := path[len(path)-1]
+	name, typ := tf.extractNameAndTypeFromPath(path[len(path)-1])
 	for _, child := range node.Children {
-		if child.Path == curPath {
+		if child.Name == name {
 			tf.createOrUpdateNode(child, path[:len(path)-1], count, size)
 			return
 		}
 	}
-	name, typ := tf.extractNameAndTypeFromPath(curPath)
 	// Create new node
 	child := &MemoryNode{
-		Path: curPath,
 		Name: name,
 		Type: typ,
 	}
