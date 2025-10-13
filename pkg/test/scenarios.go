@@ -31,20 +31,20 @@ func main() {
 	fmt.Println("READY")
 
 	time.Sleep(100 * time.Second)
-	
+
 	go func() {
 		runtime.KeepAlive(globalSlice)
 	}()
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.main.globalSlice",
 				Size:  48, // slice struct + 6 int elements
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -79,8 +79,8 @@ func main() {
 	time.Sleep(100 * time.Second)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalString",
 				Size:  16,
@@ -91,7 +91,7 @@ func main() {
 				Size:  16,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -118,14 +118,14 @@ func main() {
 	time.Sleep(100 * time.Second)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalSlice",
 				Size:  48,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -154,14 +154,14 @@ func main() {
 	time.Sleep(100 * time.Second)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalArray",
 				Size:  48,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -188,14 +188,14 @@ func main() {
 	time.Sleep(100 * time.Second)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalMap",
 				Size:  256,
 				Count: 2,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -230,14 +230,14 @@ func main() {
 	time.Sleep(100 * time.Second)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalStruct",
 				Size:  32,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -286,14 +286,14 @@ func main() {
 	time.Sleep(100 * time.Second)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalContainer",
 				Size:  16,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -325,14 +325,14 @@ func main() {
 	globalClosure()
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalClosure",
 				Size:  16,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -376,14 +376,14 @@ func main() {
 	*fieldPtr = 456
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalStruct",
 				Size:  128,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -435,14 +435,14 @@ func main() {
 	time.Sleep(100 * time.Second)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalOuter",
 				Size:  32,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -488,8 +488,8 @@ func main() {
 	runtime.KeepAlive(finTarget)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.main.finTarget",
 				Size:  896,
@@ -500,7 +500,7 @@ func main() {
 				Size:  896,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -545,8 +545,8 @@ func main() {
 	runtime.KeepAlive(cleanupTarget)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.main.obj",
 				Size:  416,
@@ -557,7 +557,7 @@ func main() {
 				Size:  416,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -621,14 +621,14 @@ func main() {
 	runtime.KeepAlive(data2)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalWriter",
 				Size:  16,
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -683,8 +683,8 @@ func main() {
 	runtime.KeepAlive(msg2)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.globalStringChan",
 				Size:  272,
@@ -692,10 +692,10 @@ func main() {
 			},
 			{
 				Name:  "main.globalMessageChan",
-				Size: 160,
+				Size:  160,
 				Count: 2,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -742,8 +742,8 @@ func main() {
 	runtime.KeepAlive(largeObj)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.smallObj",
 				Size:  16, // 8 bytes data + 8 bytes overhead
@@ -759,7 +759,7 @@ func main() {
 				Size:  896, // 800 bytes data + 96 bytes overhead
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }
@@ -798,14 +798,14 @@ func main() {
 	runtime.KeepAlive(node2)
 }
 `,
-	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
 			{
 				Name:  "main.node1",
 				Size:  16, // Node struct (int + pointer)
 				Count: 1,
 			},
-		}},
+		},
 	},
 	Timeout: 30 * time.Second,
 }

@@ -34,7 +34,7 @@ import (
 type TestScenario struct {
 	Name     string
 	Code     string
-	Expected *MemoryTree
+	Expected *MemoryNode
 	Timeout  time.Duration
 }
 
@@ -159,8 +159,8 @@ func (tf *TestFramework) attachAndAnalyze(pid int, outputFile, binary string) (*
 	return scope, nil
 }
 
-// validateResults validates the analysis results against expectations using memory tree comparison
-func (tf *TestFramework) validateResults(scope *gorefproc.ObjRefScope, expectedTree *MemoryTree) error {
+// validateResults validates the analysis results against expectations using memory node comparison
+func (tf *TestFramework) validateResults(scope *gorefproc.ObjRefScope, expectedNode *MemoryNode) error {
 	tf.t.Logf("Analysis results:")
 
 	// Get the real profile data from goref
@@ -175,21 +175,17 @@ func (tf *TestFramework) validateResults(scope *gorefproc.ObjRefScope, expectedT
 	for k, v := range nodes {
 		nodeInterfaces[k] = ProfileNodeInterface(v)
 	}
-	actualTree := tf.buildMemoryTreeFromNodes(nodeInterfaces, stringTable)
+	actualNode := tf.buildMemoryTreeFromNodes(nodeInterfaces, stringTable)
 
-	// Compare trees
-	if err := tf.compareMemoryTrees(expectedTree, actualTree); err != nil {
-		return fmt.Errorf("tree comparison failed: %v", err)
+	// Compare nodes
+	if err := tf.compareNodes(expectedNode, actualNode, ""); err != nil {
+		return fmt.Errorf("node comparison failed: %v", err)
 	}
 
-	tf.t.Logf("  ✓ Memory tree validation passed")
+	tf.t.Logf("  ✓ Memory node validation passed")
 	return nil
 }
 
-// compareMemoryTrees compares expected and actual memory trees recursively
-func (tf *TestFramework) compareMemoryTrees(expected, actual *MemoryTree) error {
-	return tf.compareNodes(expected.Root, actual.Root, "")
-}
 
 // compareNodes recursively compares two memory nodes
 func (tf *TestFramework) compareNodes(expected, actual *MemoryNode, path string) error {
@@ -265,16 +261,10 @@ type MemoryNode struct {
 	Children []*MemoryNode `json:"children,omitempty"` // Child nodes
 }
 
-// MemoryTree represents the complete memory reference tree
-type MemoryTree struct {
-	Root *MemoryNode // Root node
-}
 
-// buildMemoryTreeFromNodes builds a complete memory reference tree from goref profile nodes
-func (tf *TestFramework) buildMemoryTreeFromNodes(nodes map[string]ProfileNodeInterface, stringTable []string) *MemoryTree {
-	tree := &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{}},
-	}
+// buildMemoryTreeFromNodes builds a memory reference node from goref profile nodes
+func (tf *TestFramework) buildMemoryTreeFromNodes(nodes map[string]ProfileNodeInterface, stringTable []string) *MemoryNode {
+	root := &MemoryNode{Children: []*MemoryNode{}}
 
 	mainPackageNodes := 0
 
@@ -288,13 +278,13 @@ func (tf *TestFramework) buildMemoryTreeFromNodes(nodes map[string]ProfileNodeIn
 		// Only include nodes from main package or system nodes for debugging
 		if strings.HasPrefix(nodePath[len(nodePath)-1], "main.") {
 			mainPackageNodes++
-			tf.createOrUpdateNode(tree.Root, nodePath, node.GetCount(), node.GetSize())
+			tf.createOrUpdateNode(root, nodePath, node.GetCount(), node.GetSize())
 		}
 	}
 
 	tf.t.Logf("  Found %d main package nodes", mainPackageNodes)
 
-	return tree
+	return root
 }
 
 // extractNodePathFromKey extracts a readable node path from the profile key
