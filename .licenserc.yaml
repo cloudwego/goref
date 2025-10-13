@@ -14,6 +14,6 @@ header:
     - pkg/proc/region.go
     - pkg/proc/variables.go
     - pkg/proc/mapiter.go
-    - testdata
+    - test/testdata
 
   comment: on-failure

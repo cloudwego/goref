@@ -29,7 +29,7 @@ $ go tool pprof -http=:5079 ./grf.out
 
 The opened HTML page displays the reference distribution of the heap memory. You can choose to view the "inuse space" or "inuse objects".
 
-For example, the heap profile sampled from a [testing program](https://github.com/cloudwego/goref/blob/main/testdata/mockleak/main.go) is shown below, which reflects the call stack distribution of object creation.
+For example, the heap profile sampled from a [testing program](https://github.com/cloudwego/goref/blob/main/test/testdata/mockleak/main.go) is shown below, which reflects the call stack distribution of object creation.
 
 ![img_v3_02gq_63631612-6f2d-40ce-8f98-a4e52682ef7g](https://github.com/user-attachments/assets/9fb6bded-3f68-4b73-972d-a273c45b7680)
 

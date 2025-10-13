@@ -6,8 +6,8 @@ import (
 	_ "net/http/pprof"
 	"time"
 
-	"github.com/cloudwego/goref/testdata/mockleak/creator"
-	"github.com/cloudwego/goref/testdata/mockleak/holder"
+	"github.com/cloudwego/goref/test/testdata/mockleak/creator"
+	"github.com/cloudwego/goref/test/testdata/mockleak/holder"
 )
 
 func main() {
