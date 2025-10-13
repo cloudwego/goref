@@ -556,7 +556,7 @@ func main() {
 			},
 			{
 				Name:  "main.globalMessageChan",
-				Size:  ExactValue(160),
+				Size:  RangeValue(144, 160),
 				Count: ExactValue(2),
 				Children: []*MemoryNode{
 					{

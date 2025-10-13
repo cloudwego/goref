@@ -2,8 +2,6 @@ module github.com/cloudwego/goref
 
 go 1.21
 
-toolchain go1.22.2
-
 require (
 	github.com/go-delve/delve v1.24.2
 	github.com/modern-go/reflect2 v1.0.2
