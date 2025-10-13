@@ -18,6 +18,23 @@ import (
 	"testing"
 )
 
+var testCases = []TestScenario{
+	LocalStringScenario,
+	LocalSliceAllocationScenario,
+	GlobalSliceScenario,
+	GlobalMapScenario,
+	GlobalStructScenario,
+	ClosureScenario,
+	FieldLockScenario,
+	NestedStructScenario,
+	FinalizerScenario,
+	CleanupScenario,
+	InterfaceScenario,
+	ChannelScenario,
+	AllocationHeaderScenario,
+	CircularReferenceScenario,
+}
+
 // TestScenarios runs individual test scenarios using table-driven approach
 func TestScenarios(t *testing.T) {
 	if testing.Short() {
@@ -25,30 +42,11 @@ func TestScenarios(t *testing.T) {
 	}
 
 	// Define test cases using table-driven approach
-	testCases := []struct {
-		name     string
-		scenario TestScenario
-	}{
-		{"local slice allocation", LocalSliceAllocationScenario},
-		{"global basic types", LocalStringScenario},
-		{"global slice", GlobalSliceScenario},
-		{"global map", GlobalMapScenario},
-		{"global struct", GlobalStructScenario},
-		{"closure variable capture", ClosureScenario},
-		{"field reference locking", FieldLockScenario},
-		{"nested struct field references", NestedStructScenario},
-		{"finalizer function references", FinalizerScenario},
-		{"cleanup function references", CleanupScenario},
-		{"interface variable references", InterfaceScenario},
-		{"channel references", ChannelScenario},
-		{"allocation header behavior", AllocationHeaderScenario},
-		{"circular reference behavior", CircularReferenceScenario},
-	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.Name, func(t *testing.T) {
 			framework := NewTestFramework(t)
-			framework.AddScenario(tc.scenario)
+			framework.AddScenario(tc)
 			framework.RunAll()
 		})
 	}
