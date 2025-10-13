@@ -39,6 +39,12 @@ func TestScenarios(t *testing.T) {
 		{"closure variable capture", ClosureScenario},
 		{"field reference locking", FieldLockScenario},
 		{"nested struct field references", NestedStructScenario},
+		{"finalizer function references", FinalizerScenario},
+		{"cleanup function references", CleanupScenario},
+		{"interface variable references", InterfaceScenario},
+		{"channel references", ChannelScenario},
+		{"allocation header behavior", AllocationHeaderScenario},
+		{"circular reference behavior", CircularReferenceScenario},
 	}
 
 	for _, tc := range testCases {

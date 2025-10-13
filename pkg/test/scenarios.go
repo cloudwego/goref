@@ -436,7 +436,376 @@ func main() {
 }
 `,
 	Expected: &MemoryTree{
-		Root: &MemoryNode{Children: []*MemoryNode{}},
+		Root: &MemoryNode{Children: []*MemoryNode{
+			{
+				Name:  "main.globalOuter",
+				Size:  32,
+				Count: 1,
+			},
+		}},
+	},
+	Timeout: 30 * time.Second,
+}
+
+// FinalizerScenario tests finalizer function references
+var FinalizerScenario = TestScenario{
+	Name: "finalizer function references",
+	Code: `package main
+import (
+	"fmt"
+	"runtime"
+	"time"
+)
+
+type ToFin struct {
+	data [100]int64
+	next *ToFin
+}
+
+func main() {
+	// Create object with finalizer
+	obj := &ToFin{
+		data: [100]int64{1, 2, 3, 4, 5},
+	}
+
+	// Create a separate object for finalizer to reference
+	finTarget := &ToFin{
+		data: [100]int64{9, 8, 7, 6, 5},
+	}
+
+	// Set finalizer that references finTarget
+	runtime.SetFinalizer(obj, func(*ToFin) {
+		// Reference finTarget to prevent optimization
+		_ = finTarget.data[0]
+		fmt.Printf("Finalizer called\n")
+	})
+
+	fmt.Println("READY")
+	time.Sleep(100 * time.Second)
+
+	// Keep objects alive
+	runtime.KeepAlive(obj)
+	runtime.KeepAlive(finTarget)
+}
+`,
+	Expected: &MemoryTree{
+		Root: &MemoryNode{Children: []*MemoryNode{
+			{
+				Name:  "main.main.finTarget",
+				Size:  896,
+				Count: 1,
+			},
+			{
+				Name:  "main.main.obj",
+				Size:  896,
+				Count: 1,
+			},
+		}},
+	},
+	Timeout: 30 * time.Second,
+}
+
+// CleanupScenario tests cleanup function references
+var CleanupScenario = TestScenario{
+	Name: "cleanup function references",
+	Code: `package main
+import (
+	"fmt"
+	"runtime"
+	"time"
+)
+
+type ToCleanup struct {
+	data [50]int64
+}
+
+func cleanupFunc(arg *ToCleanup) {
+	fmt.Printf("Cleanup called: %d\n", arg.data[0])
+}
+
+func main() {
+	// Create object that will have cleanup
+	obj := &ToCleanup{
+		data: [50]int64{10, 20, 30, 40, 50},
+	}
+
+	// Create cleanup target
+	cleanupTarget := &ToCleanup{
+		data: [50]int64{50, 40, 30, 20, 10},
+	}
+
+	// Add cleanup function
+	runtime.AddCleanup(obj, cleanupFunc, cleanupTarget)
+
+	fmt.Println("READY")
+	time.Sleep(100 * time.Second)
+
+	// Keep objects alive
+	runtime.KeepAlive(obj)
+	runtime.KeepAlive(cleanupTarget)
+}
+`,
+	Expected: &MemoryTree{
+		Root: &MemoryNode{Children: []*MemoryNode{
+			{
+				Name:  "main.main.obj",
+				Size:  416,
+				Count: 1,
+			},
+			{
+				Name:  "main.main.cleanupTarget",
+				Size:  416,
+				Count: 1,
+			},
+		}},
+	},
+	Timeout: 30 * time.Second,
+}
+
+// InterfaceScenario tests interface variable references
+var InterfaceScenario = TestScenario{
+	Name: "interface variable references",
+	Code: `package main
+import (
+	"fmt"
+	"runtime"
+	"time"
+)
+
+type Data struct {
+	ID   int64
+	Name string
+}
+
+type Writer interface {
+	Write(data string) error
+}
+
+type FileWriter struct {
+	filePath string
+}
+
+func (fw *FileWriter) Write(data string) error {
+	// Simulate writing to file
+	return nil
+}
+
+var globalWriter Writer
+
+func main() {
+	// Create interface variable and assign to global to force heap allocation
+	globalWriter = &FileWriter{
+		filePath: "/tmp/test.txt",
+	}
+
+	// Create data objects
+	data1 := &Data{
+		ID:   12345,
+		Name: "test data 1",
+	}
+	data2 := &Data{
+		ID:   67890,
+		Name: "test data 2",
+	}
+
+	// Store interface reference to data
+	globalWriter.(*FileWriter).filePath = data1.Name
+	globalWriter.(*FileWriter).filePath = data2.Name
+
+	fmt.Println("READY")
+	time.Sleep(100 * time.Second)
+
+	// Keep objects alive
+	runtime.KeepAlive(globalWriter)
+	runtime.KeepAlive(data1)
+	runtime.KeepAlive(data2)
+}
+`,
+	Expected: &MemoryTree{
+		Root: &MemoryNode{Children: []*MemoryNode{
+			{
+				Name:  "main.globalWriter",
+				Size:  16,
+				Count: 1,
+			},
+		}},
+	},
+	Timeout: 30 * time.Second,
+}
+
+// ChannelScenario tests channel references
+var ChannelScenario = TestScenario{
+	Name: "channel references",
+	Code: `package main
+import (
+	"fmt"
+	"runtime"
+	"time"
+)
+
+type Message struct {
+	ID   int64
+	Text string
+}
+
+var globalStringChan chan string
+var globalMessageChan chan *Message
+
+func main() {
+	// Create channels and assign to globals to force heap allocation
+	globalStringChan = make(chan string, 10)
+	globalMessageChan = make(chan *Message, 5)
+
+	// Create message objects
+	msg1 := &Message{
+		ID:   1001,
+		Text: "Hello",
+	}
+	msg2 := &Message{
+		ID:   1002,
+		Text: "World",
+	}
+
+	// Send messages to channels
+	go func() {
+		globalStringChan <- "test string"
+		globalMessageChan <- msg1
+		globalMessageChan <- msg2
+	}()
+
+	fmt.Println("READY")
+	time.Sleep(100 * time.Second)
+
+	// Keep objects alive
+	runtime.KeepAlive(globalStringChan)
+	runtime.KeepAlive(globalMessageChan)
+	runtime.KeepAlive(msg1)
+	runtime.KeepAlive(msg2)
+}
+`,
+	Expected: &MemoryTree{
+		Root: &MemoryNode{Children: []*MemoryNode{
+			{
+				Name:  "main.globalStringChan",
+				Size:  272,
+				Count: 2,
+			},
+			{
+				Name:  "main.globalMessageChan",
+				Size: 160,
+				Count: 2,
+			},
+		}},
+	},
+	Timeout: 30 * time.Second,
+}
+
+// AllocationHeaderScenario tests allocation header behavior with different object sizes
+var AllocationHeaderScenario = TestScenario{
+	Name: "allocation header behavior",
+	Code: `package main
+import (
+	"fmt"
+	"runtime"
+	"time"
+)
+
+var (
+	smallObj  *int64      // 8 bytes - no malloc header
+	mediumObj *[16]int64  // 128 bytes - should have malloc header
+	largeObj  *[100]int64 // 800 bytes - should have malloc header
+)
+
+func main() {
+	// Small object (8 bytes) - typically no malloc header
+	smallObj = new(int64)
+	*smallObj = 12345
+
+	// Medium object (128 bytes) - should include malloc header
+	mediumObj = new([16]int64)
+	for i := 0; i < 16; i++ {
+		mediumObj[i] = int64(i * 10)
+	}
+
+	// Large object (800 bytes) - should include malloc header
+	largeObj = new([100]int64)
+	for i := 0; i < 100; i++ {
+		largeObj[i] = int64(i)
+	}
+
+	fmt.Println("READY")
+	time.Sleep(100 * time.Second)
+
+	// Keep objects alive
+	runtime.KeepAlive(smallObj)
+	runtime.KeepAlive(mediumObj)
+	runtime.KeepAlive(largeObj)
+}
+`,
+	Expected: &MemoryTree{
+		Root: &MemoryNode{Children: []*MemoryNode{
+			{
+				Name:  "main.smallObj",
+				Size:  16, // 8 bytes data + 8 bytes overhead
+				Count: 1,
+			},
+			{
+				Name:  "main.mediumObj",
+				Size:  128, // 128 bytes, exact size match
+				Count: 1,
+			},
+			{
+				Name:  "main.largeObj",
+				Size:  896, // 800 bytes data + 96 bytes overhead
+				Count: 1,
+			},
+		}},
+	},
+	Timeout: 30 * time.Second,
+}
+
+// CircularReferenceScenario tests circular reference behavior
+var CircularReferenceScenario = TestScenario{
+	Name: "circular reference behavior",
+	Code: `package main
+import (
+	"fmt"
+	"runtime"
+	"time"
+)
+
+type Node struct {
+	ID   int
+	Next *Node
+}
+
+var node1, node2 *Node
+
+func main() {
+	// Create two nodes that reference each other
+	node1 = &Node{ID: 1}
+	node2 = &Node{ID: 2}
+
+	// Create simple circular reference
+	node1.Next = node2
+	node2.Next = node1
+
+	fmt.Println("READY")
+	time.Sleep(100 * time.Second)
+
+	// Keep objects alive
+	runtime.KeepAlive(node1)
+	runtime.KeepAlive(node2)
+}
+`,
+	Expected: &MemoryTree{
+		Root: &MemoryNode{Children: []*MemoryNode{
+			{
+				Name:  "main.node1",
+				Size:  16, // Node struct (int + pointer)
+				Count: 1,
+			},
+		}},
 	},
 	Timeout: 30 * time.Second,
 }
