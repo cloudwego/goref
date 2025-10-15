@@ -30,6 +30,8 @@ jobs:
           echo "pr_head_ref=$(echo $PR_DATA | jq -r '.headRefName')" >> $GITHUB_OUTPUT
           echo "pr_head_repo=$(echo $PR_DATA | jq -r '.headRepository.name')" >> $GITHUB_OUTPUT
           echo "pr_head_owner=$(echo $PR_DATA | jq -r '.headRepositoryOwner.login')" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Checkout PR
         uses: actions/checkout@v4
