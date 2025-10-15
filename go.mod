@@ -3,7 +3,7 @@ module github.com/cloudwego/goref
 go 1.23.1
 
 require (
-	github.com/go-delve/delve v1.25.3-0.20251008220216-d5d75768ffc6
+	github.com/go-delve/delve v1.25.3-0.20251014173838-4b670ea7f860
 	github.com/modern-go/reflect2 v1.0.2
 	github.com/spf13/cobra v1.9.1
 )
