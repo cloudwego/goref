@@ -521,6 +521,10 @@ func ObjectReference(t *proc.Target, filename string) (*ObjRefScope, error) {
 	threadID := t.CurrentThread().ThreadID()
 	grs, _, _ := proc.GoroutinesInfo(t, 0, 0)
 	for _, gr := range grs {
+		if gr.Unreadable != nil {
+			logflags.DebuggerLogger().Warnf("unreadable goroutine err: %v", gr.Unreadable)
+			continue
+		}
 		s.g = &stack{}
 		lo, hi := getStack(gr)
 		if gr.Thread != nil {
