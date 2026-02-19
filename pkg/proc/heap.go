@@ -695,6 +695,22 @@ type cleanup struct {
 	fn Address // cleanup function, always 8 bytes
 }
 
+func specialCleanupFnAddr(spf *region) (Address, bool) {
+	// go1.24/1.25 layout
+	if spf.HasField("fn") {
+		return spf.Field("fn").a, true
+	}
+	// go1.26+ layout: specialCleanup.cleanup.fn
+	if !spf.HasField("cleanup") {
+		return 0, false
+	}
+	cleanupField := spf.Field("cleanup")
+	if !cleanupField.HasField("fn") {
+		return 0, false
+	}
+	return cleanupField.Field("fn").a, true
+}
+
 func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, fintyp, clutyp godwarf.Type, kindSpecialFinalizer, kindSpecialCleanup uint8) error {
 	// Process special records.
 	for special := sp.Field("specials"); special.Address() != 0; special = special.Field("next") {
@@ -726,9 +742,16 @@ func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, fintyp, clutyp godwarf
 				continue
 			}
 			var clu cleanup
+			if clutyp == nil {
+				continue
+			}
 			spf := *special
 			spf.typ = clutyp
-			clu.fn = spf.Field("fn").a
+			fn, ok := specialCleanupFnAddr(&spf)
+			if !ok {
+				continue
+			}
+			clu.fn = fn
 			s.cleanups = append(s.cleanups, clu)
 		default:
 			// WeakHandle may have an 8-byte pointer stored in the heap,
