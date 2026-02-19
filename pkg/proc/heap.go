@@ -159,6 +159,12 @@ type HeapScope struct {
 
 	// for go1.24+, offset field of runtime.special type is uintptr
 	specialOffsetUintptrType uint8 // 0: not sure, 1: uintptr, 2: uint16
+
+	// For go1.26 Green Tea GC: one-page spans may store inline mark bits
+	// near the end of the span, shifting small-span heap bitmap base.
+	greenTeaGCEnabled      bool
+	spanInlineMarkBitsSize int64
+	inlineMarkSpanPages    map[Address]struct{}
 }
 
 func (s *HeapScope) readHeap() error {
@@ -181,6 +187,7 @@ func (s *HeapScope) readHeap() error {
 	s.arenaBaseOffset = s.getArenaBaseOffset()
 	s.arenaL1Bits, s.arenaL2Bits = s.rtConstant("arenaL1Bits"), s.rtConstant("arenaL2Bits")
 	s.minSizeForMallocHeader = s.rtConstant("minSizeForMallocHeader")
+	s.initInlineMarkBitsMeta(mheap)
 
 	// start read all spans
 	spans, spanInfos := s.readAllSpans(mheap.Field("allspans").Array(), spanInUse, kindSpecialFinalizer, kindSpecialCleanup)
@@ -250,8 +257,8 @@ func (s *HeapScope) readTypePointers(spans []*region, spanInfos []*spanInfo) {
 			continue
 		}
 		if s.heapBitsInSpan(spi.elemSize) {
-			bitmapSize := spi.spanSize / 8 / 8
-			readUint64Array(s.mem, uint64(spi.base.Add(spi.spanSize-bitmapSize)), spi.ptrMask)
+			bitmapBase := smallSpanBitmapBase(s, spi)
+			readUint64Array(s.mem, uint64(bitmapBase), spi.ptrMask)
 			continue
 		}
 		// with alloc headers
@@ -260,6 +267,100 @@ func (s *HeapScope) readTypePointers(spans []*region, spanInfos []*spanInfo) {
 			spi.largeTypeAddr = uint64(largeTypeAddr)
 		}
 	}
+}
+
+func smallSpanBitmapBase(s *HeapScope, span *spanInfo) Address {
+	bitmapSize := span.spanSize / 8 / 8
+	bitmapBase := span.base.Add(span.spanSize - bitmapSize)
+	if bitmapSize <= 0 {
+		return bitmapBase
+	}
+
+	if !s.greenTeaGCEnabled || s.spanInlineMarkBitsSize <= 0 {
+		return bitmapBase
+	}
+	if !s.spanHasInlineMarkBits(span.base, span.spanSize) {
+		return bitmapBase
+	}
+	return bitmapBase.Add(-s.spanInlineMarkBitsSize)
+}
+
+// initInlineMarkBitsMeta detects whether GreenTeaGC inline mark bits are enabled
+// and initializes related metadata. If unavailable, it resets the metadata fields.
+func (s *HeapScope) initInlineMarkBitsMeta(mheap *region) {
+	s.greenTeaGCEnabled = false
+	s.spanInlineMarkBitsSize = 0
+	s.inlineMarkSpanPages = nil
+	if mheap == nil {
+		return
+	}
+	typ, err := findType(s.bi, "runtime.spanInlineMarkBits")
+	if err != nil || typ == nil {
+		return
+	}
+	// In go1.26 with !greenteagc the type exists but is an empty struct.
+	inlineMarkBitsSize := typ.Size()
+	if inlineMarkBitsSize <= 0 {
+		return
+	}
+	s.greenTeaGCEnabled = true
+	s.spanInlineMarkBitsSize = inlineMarkBitsSize
+	s.inlineMarkSpanPages = make(map[Address]struct{})
+	s.readInlineMarkSpanPages(mheap)
+}
+
+func (s *HeapScope) readInlineMarkSpanPages(mheap *region) {
+	arenaSize := s.rtConstant("heapArenaBytes")
+	level1Table := mheap.Field("arenas")
+	level1size := level1Table.ArrayLen()
+	to := &region{}
+	for level1 := int64(0); level1 < level1size; level1++ {
+		level1Table.ArrayIndex(level1, to)
+		if to.Address() == 0 {
+			continue
+		}
+		level2table := to.Deref()
+		level2size := level2table.ArrayLen()
+		for level2 := int64(0); level2 < level2size; level2++ {
+			level2table.ArrayIndex(level2, to)
+			if to.Address() == 0 {
+				continue
+			}
+			heapArena := to.Deref()
+			if !heapArena.HasField("pageUseSpanInlineMarkBits") {
+				continue
+			}
+			min := Address(arenaSize*(level2+level1*level2size) - s.arenaBaseOffset)
+			s.readInlineMarkBitmap(heapArena.Field("pageUseSpanInlineMarkBits"), min)
+		}
+	}
+}
+
+func (s *HeapScope) readInlineMarkBitmap(bitmap *region, min Address) {
+	n := bitmap.ArrayLen()
+	to := &region{}
+	for i := int64(0); i < n; i++ {
+		bitmap.ArrayIndex(i, to)
+		m := to.Uint8()
+		if m == 0 {
+			continue
+		}
+		for bit := int64(0); bit < 8; bit++ {
+			if m&(1<<uint(bit)) == 0 {
+				continue
+			}
+			pageAddr := min.Add((i*8 + bit) * s.pageSize)
+			s.inlineMarkSpanPages[pageAddr] = struct{}{}
+		}
+	}
+}
+
+func (s *HeapScope) spanHasInlineMarkBits(spanBase Address, spanSize int64) bool {
+	if !s.greenTeaGCEnabled || s.spanInlineMarkBitsSize <= 0 || spanSize != s.pageSize || len(s.inlineMarkSpanPages) == 0 {
+		return false
+	}
+	_, ok := s.inlineMarkSpanPages[spanBase]
+	return ok
 }
 
 func (s *HeapScope) readArenas(mheap *region) (success bool) {
