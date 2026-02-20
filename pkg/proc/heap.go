@@ -356,7 +356,7 @@ func (s *HeapScope) readInlineMarkBitmap(bitmap *region, min Address) {
 }
 
 func (s *HeapScope) spanHasInlineMarkBits(spanBase Address, spanSize int64) bool {
-	if !s.greenTeaGCEnabled || s.spanInlineMarkBitsSize <= 0 || spanSize != s.pageSize || len(s.inlineMarkSpanPages) == 0 {
+	if spanSize != s.pageSize {
 		return false
 	}
 	_, ok := s.inlineMarkSpanPages[spanBase]
