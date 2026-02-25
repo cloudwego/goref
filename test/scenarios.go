@@ -587,59 +587,60 @@ func main() {
 	Timeout: 30 * time.Second,
 }
 
-// AllocationHeaderScenario tests allocation header behavior with different object sizes
-var AllocationHeaderScenario = TestScenario{
-	Name: "allocation header behavior",
+// MallocHeaderHiddenTypeScenario validates hidden-type pointer discovery via
+// GC metadata fallback. On runtimes with allocation headers enabled, this also
+// exercises malloc-header-based type metadata loading for large scan objects.
+var MallocHeaderHiddenTypeScenario = TestScenario{
+	Name: "malloc header hidden type chain",
 	Code: `package main
 import (
 	"fmt"
 	"time"
+	"unsafe"
 )
 
-var (
-	smallObj  *[2]int64   // 16 bytes - no malloc header, avoid tiny allocator instability
-	mediumObj *[16]int64  // 128 bytes - should have malloc header
-	largeObj  *[100]int64 // 800 bytes - should have malloc header
-)
+type Node struct {
+	Value int64
+	Next  *Node
+}
+
+type Hidden struct {
+	Head *Node
+	Pad  [560]byte
+	Tail *Node
+}
+
+var hiddenHeaderRaw *byte
+
+func buildHidden() *byte {
+	n1 := &Node{Value: 101}
+	n2 := &Node{Value: 202}
+	n1.Next = n2
+
+	h := &Hidden{
+		Head: n1,
+		Tail: n2,
+	}
+	return (*byte)(unsafe.Pointer(h))
+}
 
 func main() {
-	// Small object (16 bytes) - no malloc header and more stable across arch
-	smallObj = new([2]int64)
-	smallObj[0] = 12345
-	smallObj[1] = 67890
-
-	// Medium object (128 bytes) - should include malloc header
-	mediumObj = new([16]int64)
-	for i := 0; i < 16; i++ {
-		mediumObj[i] = int64(i * 10)
-	}
-
-	// Large object (800 bytes) - should include malloc header
-	largeObj = new([100]int64)
-	for i := 0; i < 100; i++ {
-		largeObj[i] = int64(i)
-	}
-
+	hiddenHeaderRaw = buildHidden()
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
 }
 `,
 	Expected: &MemoryNode{
 		Children: []*MemoryNode{
-				{
-					Name:  "main.smallObj",
-					Size:  ExactValue(16), // 16 bytes data, no allocation header
-					Count: ExactValue(1),
+			{
+				Name:  "main.hiddenHeaderRaw",
+				Count: ExactValue(1),
+				Children: []*MemoryNode{
+					{
+						Name:  "$sub_objects$",
+						Count: ExactValue(2),
+					},
 				},
-			{
-				Name:  "main.mediumObj",
-				Size:  ExactValue(128), // 128 bytes, exact size match
-				Count: ExactValue(1),
-			},
-			{
-				Name:  "main.largeObj",
-				Size:  ExactValue(896), // 800 bytes data + 96 bytes overhead
-				Count: ExactValue(1),
 			},
 		},
 	},

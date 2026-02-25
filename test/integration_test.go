@@ -30,7 +30,7 @@ var testCases = []TestScenario{
 	FinalizerScenario,
 	InterfaceScenario,
 	ChannelScenario,
-	AllocationHeaderScenario,
+	MallocHeaderHiddenTypeScenario,
 	CircularReferenceScenario,
 }
 
