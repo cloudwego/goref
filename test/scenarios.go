@@ -194,8 +194,17 @@ func main() {
 		ID:   123,
 		Name: "test",
 	}
-	globalStruct.Ptr = new(int)
-	*globalStruct.Ptr = 456
+
+	// Use a scan object (contains pointer field) to avoid tiny allocator
+	// instability for *int targets across architectures.
+	holder := &struct {
+		V    int
+		Next *int
+	}{
+		V:    456,
+		Next: nil,
+	}
+	globalStruct.Ptr = &holder.V
 
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
@@ -588,15 +597,16 @@ import (
 )
 
 var (
-	smallObj  *int64      // 8 bytes - no malloc header
+	smallObj  *[2]int64   // 16 bytes - no malloc header, avoid tiny allocator instability
 	mediumObj *[16]int64  // 128 bytes - should have malloc header
 	largeObj  *[100]int64 // 800 bytes - should have malloc header
 )
 
 func main() {
-	// Small object (8 bytes) - typically no malloc header
-	smallObj = new(int64)
-	*smallObj = 12345
+	// Small object (16 bytes) - no malloc header and more stable across arch
+	smallObj = new([2]int64)
+	smallObj[0] = 12345
+	smallObj[1] = 67890
 
 	// Medium object (128 bytes) - should include malloc header
 	mediumObj = new([16]int64)
@@ -616,11 +626,11 @@ func main() {
 `,
 	Expected: &MemoryNode{
 		Children: []*MemoryNode{
-			{
-				Name:  "main.smallObj",
-				Size:  ExactValue(16), // 8 bytes data + 8 bytes overhead
-				Count: ExactValue(1),
-			},
+				{
+					Name:  "main.smallObj",
+					Size:  ExactValue(16), // 16 bytes data, no allocation header
+					Count: ExactValue(1),
+				},
 			{
 				Name:  "main.mediumObj",
 				Size:  ExactValue(128), // 128 bytes, exact size match
