@@ -447,6 +447,91 @@ func main() {
 	Timeout: 30 * time.Second,
 }
 
+// FinalizerQueuedScenario validates objects/functions retained by finalizers that
+// have been queued but not completed yet.
+var FinalizerQueuedScenario = TestScenario{
+	Name: "finalizer queued but not executed",
+	Code: `package main
+import (
+	"fmt"
+	"runtime"
+	"time"
+)
+
+type ToFin struct {
+	data [100]int64
+}
+
+func forceGC(rounds int) {
+	for i := 0; i < rounds; i++ {
+		runtime.GC()
+		runtime.Gosched()
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func startBlockingFinalizer(started chan struct{}) {
+	blockerObj := &ToFin{data: [100]int64{1, 2, 3, 4}}
+	runtime.SetFinalizer(blockerObj, func(*ToFin) {
+		close(started)
+		select {}
+	})
+}
+
+func enqueuePendingFinalizer() {
+	target := &ToFin{data: [100]int64{9, 8, 7, 6}}
+	obj := &ToFin{data: [100]int64{5, 4, 3, 2}}
+	runtime.SetFinalizer(obj, func(*ToFin) {
+		// Keep target alive only through finalizer closure.
+		_ = target.data[0]
+	})
+}
+
+func waitBlockingFinalizerStarted(started chan struct{}) {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		forceGC(1)
+		select {
+		case <-started:
+			return
+		default:
+			if time.Now().After(deadline) {
+				panic("blocking finalizer did not start")
+			}
+		}
+	}
+}
+
+func main() {
+	started := make(chan struct{})
+	startBlockingFinalizer(started)
+	waitBlockingFinalizerStarted(started)
+
+	// While the finalizer goroutine is blocked, enqueue another finalizer.
+	enqueuePendingFinalizer()
+	forceGC(4)
+
+	fmt.Println("READY")
+	time.Sleep(100 * time.Second)
+}
+`,
+	Expected: &MemoryNode{
+		Children: []*MemoryNode{
+			{
+				Name:  "runtime.SetFinalizer.obj",
+				Count: MinValue(1),
+			},
+			{
+				Name:  "runtime.SetFinalizer.fn",
+				Count: MinValue(1),
+			},
+		},
+	},
+	Timeout:            30 * time.Second,
+	RootPrefixes:       []string{"runtime.SetFinalizer."},
+	AllowExtraChildren: true,
+}
+
 // InterfaceScenario tests interface variable references
 var InterfaceScenario = TestScenario{
 	Name: "interface variable references",

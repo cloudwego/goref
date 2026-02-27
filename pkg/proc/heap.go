@@ -197,6 +197,7 @@ func (s *HeapScope) readHeap() error {
 		// read typed pointers when enabled alloc header
 		s.readTypePointers(spans, spanInfos)
 	}
+	s.readQueuedFinalizers()
 
 	// read firstmoduledata
 	return s.readModuleData()
@@ -714,6 +715,99 @@ func specialCleanupFnAddr(spf *region) (Address, bool) {
 		return 0, false
 	}
 	return cleanupField.Field("fn").a, true
+}
+
+// readQueuedFinalizers adds queued (not yet executed) finalizers from runtime finalizer blocks.
+func (s *HeapScope) readQueuedFinalizers() {
+	// allfin tracks all finalizer blocks with active entries (cnt),
+	// including blocks currently being drained by runFinalizers.
+	if tmp, err := s.scope.EvalExpression("runtime.allfin", loadSingleValue); err == nil && tmp != nil && tmp.RealType != nil {
+		s.addQueuedFinalizersFromBlockList(toRegion(tmp, s.bi), "alllink")
+		return
+	}
+	// fallback for runtimes where allfin is unavailable in debug info
+	if tmp, err := s.scope.EvalExpression("runtime.finq", loadSingleValue); err == nil && tmp != nil && tmp.RealType != nil {
+		s.addQueuedFinalizersFromBlockList(toRegion(tmp, s.bi), "next")
+	}
+}
+
+func (s *HeapScope) addQueuedFinalizersFromBlockList(head *region, linkField string) {
+	seen := map[Address]struct{}{}
+	to := &region{}
+	for fb := head; fb.Address() != 0; {
+		fbAddr := fb.Address()
+		if _, ok := seen[fbAddr]; ok {
+			// avoid infinite loop on corrupted list
+			break
+		}
+		seen[fbAddr] = struct{}{}
+
+		block := fb.Deref()
+		if !block.IsStruct() || !block.HasField("cnt") || !block.HasField("fin") {
+			break
+		}
+		next := nextFinalizerBlock(block, linkField)
+		cnt, ok := regionUint(block.Field("cnt"))
+		if !ok || cnt == 0 {
+			if next == nil {
+				break
+			}
+			fb = next
+			continue
+		}
+		finArr := block.Field("fin")
+		n := finArr.ArrayLen()
+		if cnt > uint64(n) {
+			cnt = uint64(n)
+		}
+		for i := int64(0); i < int64(cnt); i++ {
+			finArr.ArrayIndex(i, to)
+			if !to.IsStruct() || !to.HasField("arg") || !to.HasField("fn") {
+				continue
+			}
+			argField := to.Field("arg")
+			var arg Address
+			switch argField.typ.(type) {
+			case *godwarf.PtrType:
+				arg = argField.Address()
+			case *godwarf.UintType:
+				arg = Address(argField.Uintptr())
+			default:
+				continue
+			}
+			if arg == 0 {
+				continue
+			}
+			s.finalizers = append(s.finalizers, finalizer{
+				p:  arg,
+				fn: to.Field("fn").a,
+			})
+		}
+		if next == nil {
+			break
+		}
+		fb = next
+	}
+}
+
+func nextFinalizerBlock(block *region, linkField string) *region {
+	if block.HasField(linkField) {
+		return block.Field(linkField)
+	}
+	if block.HasField("next") {
+		return block.Field("next")
+	}
+	return nil
+}
+
+func regionUint(r *region) (uint64, bool) {
+	switch t := r.typ.(type) {
+	case *godwarf.UintType:
+		v, err := readUintRaw(r.mem, uint64(r.a), t.Size())
+		return v, err == nil
+	default:
+		return 0, false
+	}
 }
 
 func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, fintyp, clutyp godwarf.Type, kindSpecialFinalizer, kindSpecialCleanup uint8) error {
