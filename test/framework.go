@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -236,6 +237,7 @@ func (tf *TestFramework) compareNodes(expected, actual *MemoryNode) error {
 		actualChild, found := actualChildren[name]
 		if !found {
 			tf.t.Logf("  ✗ Missing child node: %s.%s", expected.Name, name)
+			tf.t.Logf("    Actual children: %v", sortedNodeNames(actualChildren))
 			return fmt.Errorf("missing child node: %s.%s", expected.Name, name)
 		}
 
@@ -254,6 +256,15 @@ func (tf *TestFramework) compareNodes(expected, actual *MemoryNode) error {
 	}
 
 	return nil
+}
+
+func sortedNodeNames(children map[string]*MemoryNode) []string {
+	names := make([]string, 0, len(children))
+	for name := range children {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ProfileNodeInterface defines the interface for accessing profile node data

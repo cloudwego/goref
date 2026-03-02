@@ -6,7 +6,7 @@ jobs:
   unit-test-x64:
     strategy:
       matrix:
-        go: [ "1.21", "1.22", "1.23", "1.24", "1.25" ]
+        go: [ "1.21", "1.22", "1.23", "1.24", "1.25", "1.26" ]
     runs-on: [ Linux, X64 ]
     steps:
       - uses: actions/checkout@v4
@@ -23,8 +23,8 @@ jobs:
   unit-test-arm:
     strategy:
       matrix:
-        go: [ "1.21", "1.22", "1.23", "1.24", "1.25" ]
-    runs-on: [ Linux, ARM64 ]
+        go: [ "1.21", "1.22", "1.23", "1.24", "1.25", "1.26" ]
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - name: Set up Go

@@ -49,7 +49,7 @@ successfully output to `grf.out`
 
 ## Go 版本约束
 
-- 可执行文件: go1.19 ~ go1.25
+- 可执行文件: go1.19 ~ go1.26
 - 编译 goref 工具: >= go1.21
 
 

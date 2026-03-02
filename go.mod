@@ -1,16 +1,15 @@
 module github.com/cloudwego/goref
 
-go 1.23.1
+go 1.24
 
 require (
-	github.com/go-delve/delve v1.25.3-0.20251110171239-73aa61d45bd6
+	github.com/go-delve/delve v1.26.0
 	github.com/modern-go/reflect2 v1.0.2
 	github.com/spf13/cobra v1.9.1
 )
 
 require (
 	github.com/cilium/ebpf v0.16.0 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
