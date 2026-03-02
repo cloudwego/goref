@@ -361,7 +361,7 @@ type MemoryNode struct {
 }
 
 // buildMemoryTreeFromNodes builds a memory reference node from goref profile nodes.
-func (tf *TestFramework) buildMemoryTreeFromNodes(nodes map[string]ProfileNodeInterface, stringTable []string, rootPrefixes []string) *MemoryNode {
+func (tf *TestFramework) buildMemoryTreeFromNodes(nodes map[string]ProfileNodeInterface, stringTable, rootPrefixes []string) *MemoryNode {
 	root := &MemoryNode{Children: []*MemoryNode{}}
 	if len(rootPrefixes) == 0 {
 		rootPrefixes = []string{"main."}
