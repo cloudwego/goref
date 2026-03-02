@@ -28,6 +28,7 @@ var testCases = []TestScenario{
 	FieldLockScenario,
 	NestedStructScenario,
 	FinalizerScenario,
+	FinalizerQueuedScenario,
 	InterfaceScenario,
 	ChannelScenario,
 	MallocHeaderHiddenTypeScenario,
