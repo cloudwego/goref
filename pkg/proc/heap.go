@@ -193,7 +193,7 @@ func (s *HeapScope) readHeap() error {
 	spans, spanInfos := s.readAllSpans(mheap.Field("allspans").Array(), spanInUse, kindSpecialFinalizer, kindSpecialCleanup)
 
 	// start read arenas
-	if !s.readArenas(mheap) {
+	if !s.readArenaBitmaps(mheap) {
 		// read typed pointers when enabled alloc header
 		s.readTypePointers(spans, spanInfos)
 	}
@@ -363,7 +363,12 @@ func (s *HeapScope) spanHasInlineMarkBits(spanBase Address, spanSize int64) bool
 	return ok
 }
 
-func (s *HeapScope) readArenas(mheap *region) (success bool) {
+// readArenaBitmaps traverses heap arenas and populates heap pointer bits from
+// the runtime's arena-level bitmap representation.
+// return false means the current runtime layout does not provide a usable arena
+// bitmap path (for example, allocation-header mode), so callers must fall
+// back to readTypePointers instead.
+func (s *HeapScope) readArenaBitmaps(mheap *region) (success bool) {
 	arenaSize := s.rtConstant("heapArenaBytes")
 	level1Table := mheap.Field("arenas")
 	level1size := level1Table.ArrayLen()
