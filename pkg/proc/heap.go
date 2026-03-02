@@ -747,8 +747,8 @@ func (s *HeapScope) addQueuedFinalizersFromBlockList(head *region, linkField str
 			break
 		}
 		next := nextFinalizerBlock(block, linkField)
-		cnt, ok := regionUint(block.Field("cnt"))
-		if !ok || cnt == 0 {
+		cnt := uint64(block.Field("cnt").Uint32())
+		if cnt == 0 {
 			if next == nil {
 				break
 			}
@@ -798,16 +798,6 @@ func nextFinalizerBlock(block *region, linkField string) *region {
 		return block.Field("next")
 	}
 	return nil
-}
-
-func regionUint(r *region) (uint64, bool) {
-	switch t := r.typ.(type) {
-	case *godwarf.UintType:
-		v, err := readUintRaw(r.mem, uint64(r.a), t.Size())
-		return v, err == nil
-	default:
-		return 0, false
-	}
 }
 
 func (s *HeapScope) addSpecial(sp *region, spi *spanInfo, fintyp, clutyp godwarf.Type, kindSpecialFinalizer, kindSpecialCleanup uint8) error {
