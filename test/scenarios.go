@@ -230,7 +230,7 @@ func main() {
 	Timeout: 30 * time.Second,
 }
 
-// ClosureScenario tests closure variable capture and memory references
+// ClosureScenario tests closure variable capture, function naming, and interface-held closures.
 var ClosureScenario = TestScenario{
 	Name: "closure variable capture",
 	Code: `package main
@@ -238,6 +238,19 @@ import (
 	"fmt"
 	"time"
 )
+
+var globalAny any
+
+func makeClosure(v int) func() {
+	payload := &struct {
+		Value int
+	}{
+		Value: v,
+	}
+	return func() {
+		fmt.Printf("Payload value: %d\n", payload.Value)
+	}
+}
 
 func main() {
 	// Create a variable that will be captured by closure
@@ -247,6 +260,8 @@ func main() {
 	globalClosure := func() {
 		fmt.Printf("Captured value: %d\n", capturedValue)
 	}
+
+	globalAny = makeClosure(7)
 
 	fmt.Println("READY")
 	time.Sleep(100 * time.Second)
@@ -262,9 +277,18 @@ func main() {
 				Size:  ExactValue(16),
 				Count: ExactValue(1),
 			},
+			{
+				Name: "main.globalAny",
+				Children: []*MemoryNode{
+					{
+						Name: "main.makeClosure.func1",
+					},
+				},
+			},
 		},
 	},
-	Timeout: 30 * time.Second,
+	Timeout:            30 * time.Second,
+	AllowExtraChildren: true,
 }
 
 // FieldLockScenario tests field reference locking entire struct
