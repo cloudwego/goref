@@ -194,17 +194,15 @@ func (s *ObjRefScope) scanFuncValue(x *ReferenceVariable, idx *pprofIndex) error
 		return err
 	}
 
-	closureIdx := idx
-	if info.name != "" {
-		closureIdx = idx.pushHead(s.pb, info.name)
-	}
-
 	closureType := info.closureType
 	if closureType == nil {
 		closureType = new(godwarf.VoidType)
 	}
 	if closure := s.findObject(info.closureAddr, closureType, proc.DereferenceMemory(x.mem)); closure != nil {
-		_ = s.findRef(closure, closureIdx)
+		if info.name != "" {
+			closure.Name = info.name
+		}
+		_ = s.findRef(closure, idx)
 		x.size += closure.size
 		x.count += closure.count
 		rvpool.Put(closure)

@@ -243,12 +243,12 @@ var globalAny any
 
 func makeClosure(v int) func() {
 	payload := &struct {
-		Value int
+		Values [3]int
 	}{
-		Value: v,
+		Values: [3]int{v},
 	}
 	return func() {
-		fmt.Printf("Payload value: %d\n", payload.Value)
+		fmt.Printf("Payload value: %d\n", payload.Values[0])
 	}
 }
 
@@ -282,6 +282,11 @@ func main() {
 				Children: []*MemoryNode{
 					{
 						Name: "main.makeClosure.func1",
+						Children: []*MemoryNode{
+							{
+								Name: "payload",
+							},
+						},
 					},
 				},
 			},
