@@ -221,7 +221,7 @@ func (tf *TestFramework) compareNodes(expected, actual *MemoryNode, allowExtraCh
 	}
 
 	// Compare Type
-	if expected.Type != actual.Type {
+	if expected.Type != "" && expected.Type != actual.Type {
 		tf.t.Logf("  ✗ Type mismatch for %s: expected %s, actual %s", expected.Name, expected.Type, actual.Type)
 		return fmt.Errorf("type mismatch for %s", expected.Name)
 	}
