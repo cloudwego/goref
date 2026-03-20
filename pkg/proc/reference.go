@@ -185,20 +185,16 @@ func (s *ObjRefScope) readFuncValueInfo(addr Address, mem proc.MemoryReadWriter)
 	return s.readClosureInfo(Address(closureAddr), proc.DereferenceMemory(mem))
 }
 
-func (s *ObjRefScope) scanFuncValue(x *ReferenceVariable, idx *pprofIndex) error {
-	if _, err := x.readPointer(x.Addr); err != nil {
-		return err
-	}
-	info, err := s.readFuncValueInfo(x.Addr, x.mem)
-	if err != nil || info == nil || info.closureAddr == 0 {
-		return err
+func (s *ObjRefScope) scanClosureInfo(x *ReferenceVariable, info *funcValueInfo, mem proc.MemoryReadWriter, idx *pprofIndex) {
+	if info == nil || info.closureAddr == 0 {
+		return
 	}
 
 	closureType := info.closureType
 	if closureType == nil {
 		closureType = new(godwarf.VoidType)
 	}
-	if closure := s.findObject(info.closureAddr, closureType, proc.DereferenceMemory(x.mem)); closure != nil {
+	if closure := s.findObject(info.closureAddr, closureType, mem); closure != nil {
 		if info.name != "" {
 			closure.Name = info.name
 		}
@@ -207,6 +203,34 @@ func (s *ObjRefScope) scanFuncValue(x *ReferenceVariable, idx *pprofIndex) error
 		x.count += closure.count
 		rvpool.Put(closure)
 	}
+}
+
+func (s *ObjRefScope) scanIndirectFuncValue(x *ReferenceVariable, addr Address, mem proc.MemoryReadWriter, idx *pprofIndex) bool {
+	if info, err := s.readFuncValueInfo(addr, mem); err == nil && info != nil && info.name != "" {
+		if y := s.findObject(addr, new(godwarf.FuncType), mem); y != nil {
+			_ = s.findRef(y, idx)
+			x.size += y.size
+			x.count += y.count
+			rvpool.Put(y)
+		}
+		return true
+	}
+	if info, err := s.readClosureInfo(addr, mem); err == nil && info != nil && info.name != "" {
+		s.scanClosureInfo(x, info, mem, idx)
+		return true
+	}
+	return false
+}
+
+func (s *ObjRefScope) scanFuncValue(x *ReferenceVariable, idx *pprofIndex) error {
+	if _, err := x.readPointer(x.Addr); err != nil {
+		return err
+	}
+	info, err := s.readFuncValueInfo(x.Addr, x.mem)
+	if err != nil || info == nil || info.closureAddr == 0 {
+		return err
+	}
+	s.scanClosureInfo(x, info, proc.DereferenceMemory(x.mem), idx)
 	return nil
 }
 
@@ -403,20 +427,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 		}
 		rvpool.Put(data)
 		mem := proc.DereferenceMemory(x.mem)
-		if info, infoErr := s.readFuncValueInfo(Address(ptrval), mem); infoErr == nil && info != nil && info.name != "" {
-			ityp = new(godwarf.FuncType)
-		} else if info, infoErr := s.readClosureInfo(Address(ptrval), mem); infoErr == nil && info != nil && info.name != "" {
-			closureIdx := idx.pushHead(s.pb, info.name)
-			closureType := info.closureType
-			if closureType == nil {
-				closureType = new(godwarf.VoidType)
-			}
-			if y := s.findObject(Address(ptrval), closureType, mem); y != nil {
-				_ = s.findRef(y, closureIdx)
-				x.size += y.size
-				x.count += y.count
-				rvpool.Put(y)
-			}
+		if s.scanIndirectFuncValue(x, Address(ptrval), mem, idx) {
 			return
 		}
 		if ityp == nil {
