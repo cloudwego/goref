@@ -155,6 +155,85 @@ type finalMarkParam struct {
 	hb  *gcMaskBitIterator
 }
 
+type funcValueInfo struct {
+	name        string
+	closureAddr Address
+	closureType godwarf.Type
+}
+
+func (s *ObjRefScope) readClosureInfo(addr Address, mem proc.MemoryReadWriter) (*funcValueInfo, error) {
+	funcAddr, err := readUintRaw(mem, uint64(addr), int64(s.bi.Arch.PtrSize()))
+	if err != nil || funcAddr == 0 {
+		return nil, err
+	}
+
+	info := &funcValueInfo{closureAddr: addr}
+	if fn := s.bi.PCToFunc(funcAddr); fn != nil {
+		info.name = fn.Name
+		if extra := funcExtra(fn, s.bi); extra != nil && extra.closureStructType != nil {
+			info.closureType = extra.closureStructType
+		}
+	}
+	return info, nil
+}
+
+func (s *ObjRefScope) readFuncValueInfo(addr Address, mem proc.MemoryReadWriter) (*funcValueInfo, error) {
+	closureAddr, err := readUintRaw(mem, uint64(addr), int64(s.bi.Arch.PtrSize()))
+	if err != nil || closureAddr == 0 {
+		return nil, err
+	}
+	return s.readClosureInfo(Address(closureAddr), proc.DereferenceMemory(mem))
+}
+
+func (s *ObjRefScope) scanClosureInfo(x *ReferenceVariable, info *funcValueInfo, mem proc.MemoryReadWriter, idx *pprofIndex) {
+	if info == nil || info.closureAddr == 0 {
+		return
+	}
+
+	closureType := info.closureType
+	if closureType == nil {
+		closureType = new(godwarf.VoidType)
+	}
+	if closure := s.findObject(info.closureAddr, closureType, mem); closure != nil {
+		if info.name != "" {
+			closure.Name = info.name
+		}
+		_ = s.findRef(closure, idx)
+		x.size += closure.size
+		x.count += closure.count
+		rvpool.Put(closure)
+	}
+}
+
+func (s *ObjRefScope) scanIndirectFuncValue(x *ReferenceVariable, addr Address, mem proc.MemoryReadWriter, idx *pprofIndex) bool {
+	if info, err := s.readFuncValueInfo(addr, mem); err == nil && info != nil && info.name != "" {
+		if y := s.findObject(addr, new(godwarf.FuncType), mem); y != nil {
+			_ = s.findRef(y, idx)
+			x.size += y.size
+			x.count += y.count
+			rvpool.Put(y)
+		}
+		return true
+	}
+	if info, err := s.readClosureInfo(addr, mem); err == nil && info != nil && info.name != "" {
+		s.scanClosureInfo(x, info, mem, idx)
+		return true
+	}
+	return false
+}
+
+func (s *ObjRefScope) scanFuncValue(x *ReferenceVariable, idx *pprofIndex) error {
+	if _, err := x.readPointer(x.Addr); err != nil {
+		return err
+	}
+	info, err := s.readFuncValueInfo(x.Addr, x.mem)
+	if err != nil || info == nil || info.closureAddr == 0 {
+		return err
+	}
+	s.scanClosureInfo(x, info, proc.DereferenceMemory(x.mem), idx)
+	return nil
+}
+
 func (s *ObjRefScope) finalMark(idx *pprofIndex, hb *gcMaskBitIterator) {
 	var ptr Address
 	var size, count int64
@@ -347,10 +426,14 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			}
 		}
 		rvpool.Put(data)
+		mem := proc.DereferenceMemory(x.mem)
+		if s.scanIndirectFuncValue(x, Address(ptrval), mem, idx) {
+			return
+		}
 		if ityp == nil {
 			ityp = new(godwarf.VoidType)
 		}
-		if y := s.findObject(Address(ptrval), ityp, proc.DereferenceMemory(x.mem)); y != nil {
+		if y := s.findObject(Address(ptrval), ityp, mem); y != nil {
 			_ = s.findRef(y, idx)
 			x.size += y.size
 			x.count += y.count
@@ -380,28 +463,7 @@ func (s *ObjRefScope) findRef(x *ReferenceVariable, idx *pprofIndex) (err error)
 			}
 		}
 	case *godwarf.FuncType:
-		var closureAddr uint64
-		closureAddr, err = x.readPointer(x.Addr)
-		if err != nil || closureAddr == 0 {
-			return
-		}
-		var cst godwarf.Type
-		var funcAddr uint64
-		funcAddr, err = readUintRaw(proc.DereferenceMemory(x.mem), closureAddr, int64(s.bi.Arch.PtrSize()))
-		if err == nil && funcAddr != 0 {
-			if fn := s.bi.PCToFunc(funcAddr); fn != nil {
-				cst = funcExtra(fn, s.bi).closureStructType
-			}
-		}
-		if cst == nil {
-			cst = new(godwarf.VoidType)
-		}
-		if closure := s.findObject(Address(closureAddr), cst, proc.DereferenceMemory(x.mem)); closure != nil {
-			_ = s.findRef(closure, idx)
-			x.size += closure.size
-			x.count += closure.count
-			rvpool.Put(closure)
-		}
+		err = s.scanFuncValue(x, idx)
 	case *finalizePtrType:
 		if y := s.findObject(x.Addr, new(godwarf.VoidType), x.mem); y != nil {
 			_ = s.findRef(y, idx)
