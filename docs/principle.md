@@ -122,7 +122,7 @@ To implement this hybrid approach, whenever we access an object's pointer using 
 
 <p align="center"><img src="https://github.com/user-attachments/assets/cb286079-a7bd-4ef4-9c07-21eb8eb7fd80" width="60%"></p>
 
-For example, when accessing the `Object` mentioned above, its gcmask is `1010`. After reading field A, the gcmask becomes `1000`. If field C isn't accessed due to type coercion, it will be accounted for during the final GC marking scan.
+For example, when accessing the `Object` mentioned above, its gcmask is `1001`. After reading field A, the gcmask becomes `1000`. If field C isn't accessed due to type coercion, it will be accounted for during the final GC marking scan.
 
 Beyond type coercion, out-of-bounds memory references are another common issue. For instance, in the earlier example code `var b *int64 = &echo().B`, both fields A and C belong to memory that cannot be scanned through DWARF types and will also be accounted for during the final scan.
 
