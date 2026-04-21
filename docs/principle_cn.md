@@ -124,7 +124,7 @@ func echo() *byte {
 
 <p align="center"><img src="https://github.com/user-attachments/assets/cb286079-a7bd-4ef4-9c07-21eb8eb7fd80" width="60%"></p>
 
-例如，上述 `Object` 对象访问时，其 gcmask 是`1010`，读取字段 A 后，gcmask 变成 `1000`，如果字段 C 因为类型强转没有访问到，则在最终扫描的 GC 标记时就会被统计到。
+例如，上述 `Object` 对象访问时，其 gcmask 是`1001`，读取字段 A 后，gcmask 变成 `1000`，如果字段 C 因为类型强转没有访问到，则在最终扫描的 GC 标记时就会被统计到。
 
 除了类型强转外，引用内存越界问题也很常见，如上文示例代码`var b *int64 = &echo().B`所示，字段 A 和 C 都属于无法被 DWARF 类型扫描的内存，也会在最终扫描时被统计。
 
